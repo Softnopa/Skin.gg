@@ -10,6 +10,15 @@ const SITE = ['index.html', 'css', 'js', 'sprites'];
 fs.rmSync(dist, { recursive: true, force: true });
 for (const entry of SITE) fs.cpSync(path.join(root, entry), path.join(dist, entry), { recursive: true });
 
+// Locally, read .env (gitignored) so `npm run preview` talks to your Supabase. Real env vars win.
+const dotenv = path.join(root, '.env');
+if (fs.existsSync(dotenv)) {
+  for (const line of fs.readFileSync(dotenv, 'utf8').split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
+    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2].replace(/^(['"])(.*)\1$/, '$2');
+  }
+}
+
 // The Vercel ↔ Supabase integration sets SUPABASE_URL / SUPABASE_ANON_KEY (and NEXT_PUBLIC_* copies).
 const env = process.env;
 const url = env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || '';
