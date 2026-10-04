@@ -77,6 +77,19 @@
     </div>
   </footer>
 
+  <!-- Admin only (shown when the server says this account is an admin) -->
+  <aside class="admin-bar" id="admin-bar" hidden aria-label="Admin">
+    <button class="admin-toggle" id="admin-toggle" type="button" aria-expanded="true" aria-controls="admin-form">Admin</button>
+    <form class="admin-form" id="admin-form" autocomplete="off">
+      <label class="sr-only" for="admin-user">Username</label>
+      <input class="input input-sm" id="admin-user" placeholder="username (empty = you)" maxlength="20" autocapitalize="none" spellcheck="false">
+      <label class="sr-only" for="admin-amount">Amount in USD</label>
+      <input class="input input-sm" id="admin-amount" type="number" min="0.01" max="1000000" step="0.01" placeholder="amount $" inputmode="decimal">
+      <button class="btn btn-sell btn-sm" id="admin-go" type="submit">Deposit</button>
+      <span class="admin-msg" id="admin-msg" aria-live="polite"></span>
+    </form>
+  </aside>
+
   <div id="modal-root"></div>
   <div id="toasts" aria-live="polite"></div>
 

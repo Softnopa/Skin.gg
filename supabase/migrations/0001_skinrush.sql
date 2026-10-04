@@ -46,8 +46,23 @@ create table if not exists public.profiles (
   quiz_next_at timestamptz not null default now() + interval '15 minutes',
   quiz_tries   int not null default 3,
   quiz_q       jsonb,
-  tag          text not null,
+  tag          text not null,                      -- public name shown in live drops (= username)
+  username     text not null unique,
+  is_admin     boolean not null default false,
   created_at   timestamptz not null default now()
+);
+
+-- Usernames that become admins when their account is created. Register these names yourself first.
+-- (Grant later with: update public.profiles set is_admin = true where username = '<name>';)
+create table if not exists public.admins (username text primary key);
+insert into public.admins (username) values ('aziz') on conflict do nothing;
+
+create table if not exists public.admin_log (
+  id         bigint generated always as identity primary key,
+  admin_id   uuid not null references auth.users (id) on delete cascade,
+  target_id  uuid not null references auth.users (id) on delete cascade,
+  amount     numeric(14,2) not null,
+  created_at timestamptz not null default now()
 );
 
 create table if not exists public.inventory (
@@ -90,6 +105,8 @@ alter table public.profiles   enable row level security;
 alter table public.inventory  enable row level security;
 alter table public.seeds      enable row level security;   -- no policies: server seeds stay secret
 alter table public.drops      enable row level security;
+alter table public.admins     enable row level security;   -- no policies: server only
+alter table public.admin_log  enable row level security;   -- no policies: server only
 
 drop policy if exists "catalog is public" on public.items;
 create policy "catalog is public" on public.items for select using (true);
@@ -125,11 +142,19 @@ end $$;
 -- Returns the caller's profile row, locked for this transaction; creates it ($2,000 + a seed) on first use.
 create or replace function public._profile(u uuid) returns public.profiles
 language plpgsql security definer set search_path = public, extensions as $$
-declare p public.profiles;
+declare p public.profiles; v_email text; v_name text;
 begin
   select * into p from profiles where user_id = u for update;
   if not found then
-    insert into profiles (user_id, tag) values (u, 'player_' || substr(md5(u::text), 1, 5))
+    -- The site signs people up as <username>@skinrush.local; anything else gets a generated name.
+    select lower(email) into v_email from auth.users where id = u;
+    if v_email like '%@skinrush.local' and split_part(v_email, '@', 1) ~ '^[a-z0-9_]{3,20}$' then
+      v_name := split_part(v_email, '@', 1);
+    else
+      v_name := 'player_' || substr(md5(u::text), 1, 6);
+    end if;
+    insert into profiles (user_id, tag, username, is_admin)
+    values (u, v_name, v_name, exists (select 1 from admins a where a.username = v_name))
     on conflict (user_id) do nothing
     returning * into p;
     if found then perform _new_seed(u, null); end if;
@@ -225,6 +250,8 @@ begin
     'balance', p.balance,
     'stats', p.stats,
     'tag', p.tag,
+    'username', p.username,
+    'isAdmin', p.is_admin,
     'quiz', jsonb_build_object(
       'nextAt', (extract(epoch from p.quiz_next_at) * 1000)::bigint,
       'tries', p.quiz_tries,
@@ -435,20 +462,51 @@ begin
   return jsonb_build_object('state', _state(u));
 end $$;
 
+/* ============================== accounts & admin ============================== */
+
+-- Create the profile ($2,000, seed, admin flag) as soon as someone registers.
+create or replace function public._on_new_user() returns trigger
+language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform _profile(new.id);
+  return new;
+end $$;
+drop trigger if exists skinrush_on_new_user on auth.users;
+create trigger skinrush_on_new_user after insert on auth.users
+  for each row execute function public._on_new_user();
+
+-- Admin only: add free money to any account by username (empty username = yourself). Logged in admin_log.
+create or replace function public.admin_deposit(p_username text, p_amount numeric) returns jsonb
+language plpgsql security definer set search_path = public, extensions as $$
+declare u uuid := _uid(); me public.profiles; target public.profiles; v_amount numeric;
+begin
+  me := _profile(u);
+  if not me.is_admin then raise exception 'not_admin'; end if;
+  v_amount := round(p_amount, 2);
+  if v_amount is null or v_amount <= 0 or v_amount > 1000000 then raise exception 'bad_request'; end if;
+  select * into target from profiles
+  where username = lower(trim(coalesce(nullif(trim(p_username), ''), me.username)))
+  for update;
+  if not found then raise exception 'no_such_user'; end if;
+  update profiles set balance = balance + v_amount where user_id = target.user_id;
+  insert into admin_log (admin_id, target_id, amount) values (u, target.user_id, v_amount);
+  return jsonb_build_object('username', target.username, 'amount', v_amount, 'balance', target.balance + v_amount, 'state', _state(u));
+end $$;
+
 /* ============================== permissions ============================== */
 
 revoke all on function public._uid(), public._new_seed(uuid, text), public._profile(uuid), public._roll(uuid),
   public._pick(text, double precision), public._stat_add(uuid, text, numeric), public._add_item(uuid, text, text),
-  public._take(uuid, uuid[]), public._drop(uuid, text, text, text), public._state(uuid)
+  public._take(uuid, uuid[]), public._drop(uuid, text, text, text), public._state(uuid), public._on_new_user()
   from public, anon, authenticated;
 
 revoke all on function public.get_state(), public.open_case(text, int), public.sell_items(uuid[]), public.buy_item(text),
   public.upgrade_item(uuid[], text), public.trade_items(uuid[], text[]), public.sign_contract(uuid[]),
-  public.quiz_question(), public.quiz_answer(text), public.rotate_seed(text), public.set_client_seed(text)
+  public.quiz_question(), public.quiz_answer(text), public.rotate_seed(text), public.set_client_seed(text), public.admin_deposit(text, numeric)
   from public, anon;
 grant execute on function public.get_state(), public.open_case(text, int), public.sell_items(uuid[]), public.buy_item(text),
   public.upgrade_item(uuid[], text), public.trade_items(uuid[], text[]), public.sign_contract(uuid[]),
-  public.quiz_question(), public.quiz_answer(text), public.rotate_seed(text), public.set_client_seed(text)
+  public.quiz_question(), public.quiz_answer(text), public.rotate_seed(text), public.set_client_seed(text), public.admin_deposit(text, numeric)
   to authenticated;
 
 /* live drops over Realtime */

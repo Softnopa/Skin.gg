@@ -151,6 +151,8 @@
       state.quiz = Object.assign({}, state.quiz, s.quiz || {});
       if (s.fair) state.fair = s.fair;
       state.tag = s.tag || state.tag;
+      state.username = s.username || '';
+      state.isAdmin = !!s.isAdmin;
       SR.emit('state', state);
     },
   };

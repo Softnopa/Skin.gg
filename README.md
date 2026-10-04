@@ -16,9 +16,8 @@ The site runs in one of two modes, chosen automatically:
 1. Create a project at [supabase.com](https://supabase.com).
 2. Open **SQL Editor**. Paste and run `supabase/migrations/0001_skinrush.sql`. This creates the tables, security rules and game functions.
 3. Paste and run `supabase/seed.sql`. This loads the 2,114 skins and 46 cases.
-4. Go to **Authentication → Sign In / Providers** and turn on **Allow anonymous sign-ins**. Players start as guests and can add an email later.
-5. Go to **Authentication → URL Configuration** and set **Site URL** to your Vercel address (for example `https://skinrush.vercel.app`). Email sign-in links go there.
-6. Go to **Project Settings → API** and copy the **Project URL** and the **anon / publishable** key. Never use the `service_role` / secret key in this site; the build refuses it.
+4. Go to **Authentication → Sign In / Providers → Email** and turn **off** “Confirm email”. Players sign up with a username and password only. The site turns each username into an internal address (`name@skinrush.local`) that is never emailed.
+5. Go to **Project Settings → API** and copy the **Project URL** and the **anon / publishable** key. Never use the `service_role` / secret key in this site; the build refuses it.
 
 ### 2. Put the site online (Vercel)
 
@@ -29,14 +28,21 @@ The site runs in one of two modes, chosen automatically:
    - `SUPABASE_ANON_KEY`: the anon / publishable key
 
    If you connect Supabase through Vercel's **Integrations** page instead, these variables are added for you.
-4. Click **Deploy**. Open the site on your PC and phone. Each device starts as a guest; use the person icon → **Save progress** to attach an email, then sign in with that email on the other device.
+4. Click **Deploy**. Then open the site and **create the admin account first** (see below).
 
 With the Vercel CLI instead of GitHub: run `vercel` in this folder, add the two variables when asked or with `vercel env add`, then run `vercel --prod`.
+
+## Accounts and admin
+
+- The first time someone opens the site (Supabase mode), they see a login screen with **Log in** and **Create account**. Each needs only a username (3–20 lowercase letters, digits or _) and a password (6+ characters). A new account starts with $2,000.
+- Usernames listed in the `public.admins` table become admins when they register. The migration lists `aziz`. Register that username yourself right after deploying, before anyone else can take it. The password is whatever you type when you register; it is never stored in this repository.
+- Admins see a bar at the bottom of the page: enter a username (or leave it empty for yourself) and an amount, then press **Deposit**. The server checks the admin flag, caps each deposit at $1,000,000, and records every deposit in `public.admin_log`.
+- To add another admin later, run this in the SQL Editor: `update public.profiles set is_admin = true where username = 'name';`
 
 ## Run locally
 
 - **Demo mode:** open `index.html`.
-- **Supabase mode:** paste your URL and anon key into `js/config.js`, then serve the folder over http (`npm run preview`). Opening the file directly also works.
+- **Supabase mode:** put your URL and anon key in `.env` (copy `.env.example`; `.env` is never committed), then run `npm run preview`.
 - **Rebuild the Vercel output:** `npm run build` writes `dist/`.
 
 ## Change prices or cases
@@ -56,7 +62,7 @@ Each rule exists twice: in `js/game.js` for local mode and in `supabase/migratio
 
 ## Known limits
 
-- **Guest accounts:** each new guest account starts with $2,000. Someone who clears their browser gets a fresh $2,000. To stop that, turn off anonymous sign-ins and require email sign-in.
+- **New accounts:** each new account starts with $2,000, so one person can register several accounts. Turn off sign-ups in Supabase (Authentication → Sign In / Providers → “Allow new users to sign up”) if you only want people you create yourself.
 - **Quiz images:** the quiz picture comes from the public sprite sheets, so a determined player could look up which skin a picture is. Serve quiz images from the server to close this.
 - **Prices:** prices are a Skinport snapshot from October 2026, and the som rate is fixed (1 USD = 11,814 so'm). Blue Gem prices are fixed showcase values.
 

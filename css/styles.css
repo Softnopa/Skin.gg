@@ -496,3 +496,41 @@ button, input, select { font: inherit; color: inherit; }
   .contract-slots { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .slot-blank { min-height: 110px; }
 }
+
+/* ---------- login ---------- */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.login {
+  position: fixed; inset: 0; z-index: 150; display: grid; place-items: center; padding: 16px; overflow-y: auto;
+  background:
+    radial-gradient(60% 50% at 50% 30%, color-mix(in srgb, var(--ember) 18%, transparent), transparent 70%),
+    repeating-linear-gradient(-45deg, transparent 0 22px, rgba(255, 255, 255, .018) 22px 44px),
+    var(--ink);
+}
+.login-card { width: min(400px, 100%); display: flex; flex-direction: column; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 26px 22px 20px; box-shadow: 0 30px 80px -24px rgba(0, 0, 0, .8); }
+.login-brand { display: flex; align-items: center; gap: 10px; justify-content: center; font: 700 26px var(--display); margin-bottom: 8px; }
+.login-tabs { display: grid; grid-template-columns: 1fr 1fr; background: var(--ink-2); border: 1px solid var(--line); border-radius: 12px; padding: 3px; margin-bottom: 8px; }
+.login-tabs button { border: 0; background: none; padding: 9px; border-radius: 9px; font: 700 14px var(--display); color: var(--muted); cursor: pointer; }
+.login-tabs button.on { background: var(--raised); color: var(--ember-2); }
+.login-card label { font-size: 13px; font-weight: 600; color: var(--muted); margin-top: 4px; }
+.login-card .input { width: 100%; font-size: 16px; padding: 12px 14px; }
+.login-hint { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.login-error { min-height: 20px; color: var(--danger); font-size: 14px; font-weight: 600; }
+.login-card .btn-lg { width: 100%; }
+.login-note { font-size: 12px; color: var(--muted); text-align: center; margin-top: 4px; }
+
+/* ---------- admin bar ---------- */
+.admin-bar {
+  position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 60; margin: 0 auto; max-width: 760px;
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+  background: color-mix(in srgb, var(--panel) 94%, transparent); border: 1px solid color-mix(in srgb, var(--ember) 45%, var(--line));
+  border-radius: 14px; box-shadow: 0 16px 40px -14px rgba(0, 0, 0, .8); backdrop-filter: blur(6px);
+}
+.admin-toggle { border: 0; background: var(--ember); color: var(--ink); font: 700 12px var(--display); padding: 6px 10px; border-radius: 8px; cursor: pointer; flex: none; }
+.admin-form { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.admin-form .input-sm { width: 170px; flex: 1 1 120px; }
+.admin-msg { font-size: 13px; color: var(--muted); }
+.admin-bar.collapsed { left: auto; right: 12px; width: auto; }
+.admin-bar.collapsed .admin-form { display: none; }
+body.has-admin-bar .footer { padding-bottom: 80px; }
+body.has-admin-bar #toasts { bottom: 84px; }
+.drops-track:empty::after { content: "Drops from other players show up here."; align-self: center; padding-left: 12px; color: var(--muted); font-size: 13px; }

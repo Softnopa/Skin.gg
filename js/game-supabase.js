@@ -3,7 +3,7 @@
    Activated by app.js when js/config.js has a Supabase URL and anon key. */
 (() => {
   const SR = window.SR;
-  const KNOWN = ['insufficient_funds', 'not_owned', 'bad_request', 'quiz_not_ready', 'not_signed_in'];
+  const KNOWN = ['insufficient_funds', 'not_owned', 'bad_request', 'quiz_not_ready', 'not_signed_in', 'not_admin', 'no_such_user'];
 
   const remote = {
     mode: 'supabase',
@@ -12,25 +12,42 @@
 
     async init(cfg) {
       this.sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
-        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
       });
-      let { data: { session } } = await this.sb.auth.getSession();
-      if (!session) {
-        // Guest account: instant play. Needs "Anonymous sign-ins" enabled in Supabase → Authentication → Providers.
-        const { data, error } = await this.sb.auth.signInAnonymously();
-        if (error) throw Object.assign(new Error(error.message), { code: 'auth' });
-        session = data.session;
-      }
-      this.user = session.user;
-      this.sb.auth.onAuthStateChange((event, s) => {
-        const next = s && s.user;
-        const switched = next && this.user && next.id !== this.user.id;
-        this.user = next || null;
-        SR.emit('account');
-        if (switched) this.refresh().then(() => SR.emit('reload')).catch(() => {});
-      });
+      const { data: { session } } = await this.sb.auth.getSession();
+      // No saved session: show the login / register screen and wait until it signs someone in.
+      this.user = session ? session.user : await SR.showLogin(this);
+      this.sb.auth.onAuthStateChange(event => { if (event === 'SIGNED_OUT') location.reload(); });
       await this.refresh();
       this.live();
+    },
+
+    /* ---------- accounts: username + password ----------
+       Supabase Auth needs an email, so a username maps to <username>@skinrush.local. Nothing is ever emailed;
+       "Confirm email" must be off in Supabase → Authentication → Sign In / Providers → Email. */
+    USERNAME: /^[a-z0-9_]{3,20}$/,
+    emailFor: name => `${name}@skinrush.local`,
+    async login(username, password) {
+      const { data, error } = await this.sb.auth.signInWithPassword({ email: this.emailFor(username), password });
+      if (error) throw new Error(/invalid login/i.test(error.message) ? 'Wrong username or password.' : error.message);
+      return data.user;
+    },
+    async register(username, password) {
+      const { data, error } = await this.sb.auth.signUp({ email: this.emailFor(username), password });
+      if (error) {
+        if (/already registered|already exists/i.test(error.message)) throw new Error('That username is taken. Pick another one.');
+        if (/password/i.test(error.message)) throw new Error('Use a password with at least 6 characters.');
+        throw new Error(error.message);
+      }
+      if (!data.session) throw new Error('Account created, but sign-in is blocked: the site owner must turn off “Confirm email” in Supabase.');
+      return data.user;
+    },
+    async signOut() { await this.sb.auth.signOut(); location.reload(); },
+
+    /* ---------- admin ---------- */
+    async adminDeposit(username, amount) {
+      const d = await this.call('admin_deposit', { p_username: username, p_amount: amount });
+      return { username: d.username, amount: Number(d.amount), balance: Number(d.balance) };
     },
 
     async call(fn, args) {
@@ -63,20 +80,6 @@
     async quizAnswer(choice) { const d = await this.call('quiz_answer', { p_choice: choice }); return { correct: d.correct, answer: d.answer, triesLeft: d.triesLeft }; },
     async rotateSeed(client) { await this.call('rotate_seed', { p_client: client || null }); },
     async setClientSeed(v) { await this.call('set_client_seed', { p_client: v }); },
-
-    /* ---------- account ---------- */
-    isGuest() { return !this.user || this.user.is_anonymous || !this.user.email; },
-    // Keep a guest's progress by attaching an email (Supabase sends a confirmation link).
-    async saveWithEmail(email) {
-      const { error } = await this.sb.auth.updateUser({ email }, { emailRedirectTo: location.origin + location.pathname });
-      if (error) throw error;
-    },
-    // Sign in to an existing account on this device (magic link).
-    async signInWithEmail(email) {
-      const { error } = await this.sb.auth.signInWithOtp({ email, options: { shouldCreateUser: false, emailRedirectTo: location.origin + location.pathname } });
-      if (error) throw error;
-    },
-    async signOut() { await this.sb.auth.signOut(); location.reload(); },
 
     /* ---------- realtime: real drops + real online count ---------- */
     async live() {

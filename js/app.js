@@ -133,42 +133,103 @@
   /* ---------- account (Supabase mode) ---------- */
   function drawAccount() {
     const btn = $('#btn-account');
-    if (SR.game.mode !== 'supabase') { btn.hidden = true; return; }
+    const st = SR.store.state;
+    if (SR.game.mode !== 'supabase') { btn.hidden = true; $('#admin-bar').hidden = true; return; }
     btn.hidden = false;
-    btn.classList.toggle('guest', SR.game.isGuest());
-    btn.title = SR.game.isGuest() ? 'Guest account: add your email to keep your progress' : `Signed in as ${SR.game.user.email}`;
+    btn.title = st.username ? `Signed in as ${st.username}` : 'Account';
+    $('#admin-bar').hidden = !st.isAdmin;
+    document.body.classList.toggle('has-admin-bar', !!st.isAdmin);
   }
-  SR.on('account', drawAccount);
-  SR.showAccount = () => {
-    const g = SR.game, guest = g.isGuest();
-    const m = SR.modal(`
-      <h2 class="modal-title">${guest ? 'Keep your progress' : 'Your account'}</h2>
-      <p class="modal-sub">${guest
-        ? 'You are playing as a guest. Your balance and skins live on this browser only. Add your email to keep them and to sign in on your phone.'
-        : `Signed in as <b>${esc(g.user.email)}</b>. Open the site on any device and sign in with this email to get the same balance and skins.`}</p>
-      ${guest ? `
-      <form class="account-form" id="acc-save">
-        <label for="acc-email">Email</label>
-        <div class="account-row"><input class="input" id="acc-email" type="email" required autocomplete="email" placeholder="you@example.com"><button class="btn btn-go" type="submit">Save progress</button></div>
-      </form>
-      <h3 class="modal-h3">Already saved your progress?</h3>
-      <form class="account-form" id="acc-signin">
-        <label for="acc-email2">Sign in with your email. This guest session's skins stay with the guest.</label>
-        <div class="account-row"><input class="input" id="acc-email2" type="email" required autocomplete="email" placeholder="you@example.com"><button class="btn btn-ghost" type="submit">Email me a link</button></div>
-      </form>` : `<div class="win-actions"><button class="btn btn-ghost" type="button" id="acc-out">Sign out</button></div>`}
-      <p class="verify-out" id="acc-msg" aria-live="polite"></p>`, { label: 'Account' });
-    const msg = $('#acc-msg', m.el);
-    const run = async (fn, okText) => {
-      msg.textContent = 'Sending…';
-      try { await fn(); msg.innerHTML = `<b class="good-text">${okText}</b>`; }
-      catch (e) { msg.innerHTML = `<span class="bad-text">${esc(e.message || 'That didn’t work. Check the address and try again.')}</span>`; }
+  SR.on('state', drawAccount);
+
+  // Full-screen login / register. Resolves with the signed-in user.
+  SR.showLogin = game => new Promise(resolve => {
+    const el = document.createElement('div');
+    el.className = 'login';
+    el.innerHTML = `
+      <form class="login-card" id="login-form" novalidate>
+        <div class="login-brand">
+          <svg viewBox="0 0 32 32" width="40" height="40" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--ember)"/><path d="M22 9h-9l-4 4 4 4h6l-3 3H9v3h9l4-4-4-4h-6l3-3h7z" fill="var(--ink)"/></svg>
+          <span>SkinRush</span>
+        </div>
+        <div class="login-tabs" role="tablist">
+          <button type="button" role="tab" class="on" aria-selected="true" data-tab="login">Log in</button>
+          <button type="button" role="tab" aria-selected="false" data-tab="register">Create account</button>
+        </div>
+        <label for="login-user">Username</label>
+        <input class="input" id="login-user" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="20" required>
+        <label for="login-pass">Password</label>
+        <input class="input" id="login-pass" name="password" type="password" autocomplete="current-password" minlength="6" required>
+        <p class="login-hint" id="login-hint">Welcome back. New here? Choose “Create account”.</p>
+        <p class="login-error" id="login-error" aria-live="polite"></p>
+        <button class="btn btn-go btn-lg" type="submit" id="login-go">Log in</button>
+        <p class="login-note">Demo site. Money here is pretend and can't be deposited or withdrawn.</p>
+      </form>`;
+    document.body.appendChild(el);
+    document.body.classList.add('no-scroll');
+    let mode = 'login';
+    const user = $('#login-user', el), pass = $('#login-pass', el), err = $('#login-error', el), go = $('#login-go', el);
+    const setMode = m => {
+      mode = m;
+      $$('[data-tab]', el).forEach(b => { b.classList.toggle('on', b.dataset.tab === m); b.setAttribute('aria-selected', b.dataset.tab === m); });
+      go.textContent = m === 'login' ? 'Log in' : 'Create account';
+      pass.autocomplete = m === 'login' ? 'current-password' : 'new-password';
+      $('#login-hint', el).textContent = m === 'login'
+        ? 'Welcome back. New here? Choose “Create account”.'
+        : `Usernames use 3–20 lowercase letters, digits or _. Passwords need at least 6 characters. You start with ${SR.price(2000)}.`;
+      err.textContent = '';
     };
-    const save = $('#acc-save', m.el), signin = $('#acc-signin', m.el), out = $('#acc-out', m.el);
-    if (save) save.addEventListener('submit', e => { e.preventDefault(); run(() => g.saveWithEmail($('#acc-email', m.el).value.trim()), 'Check your inbox and open the confirmation link. Your progress stays on this account.'); });
-    if (signin) signin.addEventListener('submit', e => { e.preventDefault(); run(() => g.signInWithEmail($('#acc-email2', m.el).value.trim()), 'Check your inbox for a sign-in link.'); });
-    if (out) out.addEventListener('click', () => g.signOut());
+    el.addEventListener('click', e => { const t = e.target.closest('[data-tab]'); if (t) setMode(t.dataset.tab); });
+    setTimeout(() => user.focus(), 50);
+    $('#login-form', el).addEventListener('submit', async e => {
+      e.preventDefault();
+      const name = user.value.trim().toLowerCase(), pw = pass.value;
+      if (!game.USERNAME.test(name)) { err.textContent = 'Usernames use 3–20 letters, digits or _ (no spaces).'; user.focus(); return; }
+      if (pw.length < 6) { err.textContent = 'Passwords need at least 6 characters.'; pass.focus(); return; }
+      go.disabled = true; err.textContent = '';
+      go.textContent = mode === 'login' ? 'Logging in…' : 'Creating account…';
+      try {
+        const u = mode === 'login' ? await game.login(name, pw) : await game.register(name, pw);
+        el.remove();
+        document.body.classList.remove('no-scroll');
+        resolve(u);
+      } catch (ex) {
+        err.textContent = ex.message || 'That didn’t work. Try again.';
+        go.disabled = false;
+        go.textContent = mode === 'login' ? 'Log in' : 'Create account';
+      }
+    });
+  });
+
+  SR.showAccount = () => {
+    const st = SR.store.state;
+    const m = SR.modal(`
+      <h2 class="modal-title">${esc(st.username || 'Your account')}</h2>
+      <p class="modal-sub">${st.isAdmin ? 'Admin account. ' : ''}Log in with this username and your password on any device to get the same balance and skins.</p>
+      <div class="win-actions"><button class="btn btn-ghost" type="button" id="acc-out">Log out</button></div>`, { label: 'Account' });
+    $('#acc-out', m.el).addEventListener('click', () => SR.game.signOut());
   };
   document.addEventListener('click', e => { if (e.target.closest('#btn-account')) SR.showAccount(); });
+
+  // Admin bar: give free money to any account by username (empty = yourself). The server checks admin rights.
+  $('#admin-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = $('#admin-go'), out = $('#admin-msg');
+    const who = $('#admin-user').value.trim().toLowerCase(), amount = Number($('#admin-amount').value);
+    if (!(amount > 0 && amount <= 1000000)) { out.textContent = 'Enter an amount from 0.01 to 1,000,000.'; return; }
+    btn.disabled = true; out.textContent = '';
+    try {
+      const r = await SR.game.adminDeposit(who, amount);
+      out.textContent = `Added ${SR.price(r.amount)} to ${r.username}`;
+      SR.audio.coins();
+      $('#admin-amount').value = '';
+    } catch (ex) { out.textContent = SR.errorText(ex); }
+    btn.disabled = false;
+  });
+  $('#admin-toggle').addEventListener('click', () => {
+    const bar = $('#admin-bar'), open = bar.classList.toggle('collapsed');
+    $('#admin-toggle').setAttribute('aria-expanded', String(!open));
+  });
 
   /* ---------- boot ---------- */
   const loadScript = src => new Promise((res, rej) => {
@@ -190,7 +251,7 @@
         document.body.classList.add('mode-supabase');
       } catch (e) {
         app.innerHTML = `<section class="wrap section empty"><h1>Can't reach the game server</h1>
-          <p>${esc(e.code === 'auth' ? 'Sign-in failed: ' + e.message + '. If you run this site, enable Anonymous sign-ins in Supabase → Authentication → Sign In / Providers.' : e.message || 'Check your connection.')}</p>
+          <p>${esc(e.message || 'Check your connection.')}</p>
           <button class="btn btn-go" type="button" onclick="location.reload()">Try again</button></section>`;
         return;
       }

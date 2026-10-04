@@ -13,6 +13,8 @@
     bad_request: 'That action isn’t allowed.',
     quiz_not_ready: 'The quiz isn’t open yet.',
     not_signed_in: 'You’re signed out. Reload the page to sign in again.',
+    not_admin: 'Only admins can do that.',
+    no_such_user: 'No account with that username.',
   };
   SR.errorText = e => MESSAGES[e && e.code] || 'Something went wrong. Check your connection and try again.';
 
