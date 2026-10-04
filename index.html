@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SkinRush · CS2 case demo</title>
+  <meta name="description" content="Demo CS2 skin site: open cases, upgrade, trade and buy skins with demo money.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23ff8a1f'/%3E%3Cpath d='M22 9h-9l-4 4 4 4h6l-3 3H9v3h9l4-4-4-4h-6l3-3h7z' fill='%2313141b'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <a class="skip" href="#app">Skip to content</a>
+
+  <!-- Live drops strip -->
+  <section class="drops" aria-label="Live drops">
+    <div class="drops-label">
+      <span class="live-dot" aria-hidden="true"></span>
+      <span>Live</span>
+    </div>
+    <div class="drops-track" id="drops"></div>
+  </section>
+
+  <header class="topbar">
+    <div class="wrap topbar-row">
+      <a href="#/" class="logo" aria-label="SkinRush home">
+        <svg viewBox="0 0 32 32" width="34" height="34" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--ember)"/><path d="M22 9h-9l-4 4 4 4h6l-3 3H9v3h9l4-4-4-4h-6l3-3h7z" fill="var(--ink)"/></svg>
+        <span class="logo-word">SkinRush</span>
+        <span class="demo-chip" title="Virtual coins only. Nothing here can be bought or withdrawn with real money.">demo</span>
+      </a>
+      <div class="online" aria-live="off"><span class="live-dot" aria-hidden="true"></span><b id="online">742</b> online</div>
+
+      <div class="topbar-right">
+        <button class="icon-btn" id="btn-account" type="button" aria-label="Account" hidden>
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9Zm0 2c-4.4 0-8 2.2-8 5v2h16v-2c0-2.8-3.6-5-8-5Z" fill="currentColor"/></svg>
+        </button>
+        <button class="icon-btn" id="btn-fair" type="button" aria-label="Provably fair" title="Provably fair">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Zm-1.2 14.2-3.5-3.5 1.4-1.4 2.1 2.1 4.9-4.9 1.4 1.4-6.3 6.3Z" fill="currentColor"/></svg>
+        </button>
+        <button class="icon-btn" id="btn-sound" type="button" aria-label="Toggle sound" title="Sound"></button>
+        <div class="cur-toggle" role="group" aria-label="Currency">
+          <button type="button" data-cur="usd" aria-pressed="true">$</button>
+          <button type="button" data-cur="uzs" aria-pressed="false">so'm</button>
+        </div>
+        <div class="balance">
+          <span class="balance-amt" id="balance">$0.00</span>
+          <button class="quiz-btn" id="btn-quiz" type="button">
+            <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d="M20 7h-2.2A3 3 0 0 0 12 4.4 3 3 0 0 0 6.2 7H4a1 1 0 0 0-1 1v3a1 1 0 0 0 1 1h1v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7h1a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1Zm-6-1a1 1 0 1 1 1 1h-1V6ZM9 5a1 1 0 0 1 1 1v1H9a1 1 0 0 1 0-2Zm2 14H7v-7h4v7Zm0-9H5V9h6v1Zm6 9h-4v-7h4v7Zm2-9h-6V9h6v1Z" fill="currentColor"/></svg>
+            <span>15:00</span>
+          </button>
+        </div>
+        <a href="#/inventory" class="avatar" aria-label="Inventory">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 7h16v13H4zM8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2h-2V5h-4v2z" fill="currentColor"/></svg>
+          <span class="avatar-count" id="inv-count">0</span>
+        </a>
+      </div>
+    </div>
+
+    <nav class="wrap tabs" aria-label="Main">
+      <a href="#/" data-nav="home">Cases</a>
+      <a href="#/upgrade" data-nav="upgrade">Upgrade</a>
+      <a href="#/contracts" data-nav="contracts">Contracts</a>
+      <a href="#/trade" data-nav="trade">Trade</a>
+      <a href="#/market" data-nav="market">Market</a>
+      <a href="#/inventory" data-nav="inventory">Inventory</a>
+    </nav>
+  </header>
+
+  <main id="app" tabindex="-1"></main>
+
+  <footer class="footer">
+    <div class="wrap footer-row">
+      <p>SkinRush is a demo. The balance is pretend money: it has no cash value and can't be deposited or withdrawn. Not affiliated with Valve.</p>
+      <p>Skin prices: Skinport market prices for one wear per skin, October 2026. So'm rate: 1 USD = 11,814 so'm (4 Oct 2026). Images: Steam via ByMykel/CSGO-API.</p>
+    </div>
+  </footer>
+
+  <div id="modal-root"></div>
+  <div id="toasts" aria-live="polite"></div>
+
+  <script src="js/config.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/core.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/game-supabase.js"></script>
+  <script src="js/reel.js"></script>
+  <script src="js/pages.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

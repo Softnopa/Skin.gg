@@ -1,0 +1,12 @@
+{
+  "name": "skinrush",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Demo CS2 skin site: cases, upgrades, contracts, trades and a market with pretend money.",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "seed": "node scripts/make-seed.js",
+    "preview": "node scripts/build.js && npx --yes serve dist"
+  },
+  "engines": { "node": ">=18" }
+}
