@@ -21,8 +21,10 @@ if (fs.existsSync(dotenv)) {
 
 // The Vercel ↔ Supabase integration sets SUPABASE_URL / SUPABASE_ANON_KEY (and NEXT_PUBLIC_* copies).
 const env = process.env;
-const url = env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || '';
-const key = env.SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || env.SUPABASE_PUBLISHABLE_KEY || '';
+// Strip invisible characters (a byte-order mark or stray whitespace from copy-paste breaks the Supabase URL).
+const clean = v => (v || '').replace(/[﻿​\s]/g, '');
+const url = clean(env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL);
+const key = clean(env.SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || env.SUPABASE_PUBLISHABLE_KEY);
 if (key.startsWith('sb_secret_') || /service_role/.test(Buffer.from((key.split('.')[1] || ''), 'base64').toString())) {
   console.error('Refusing to build: SUPABASE_ANON_KEY is a secret (service_role) key. Use the anon / publishable key.');
   process.exit(1);
