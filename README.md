@@ -1,6 +1,6 @@
 # SkinRush
 
-A demo CS2 skin site: 46 cases, upgrades, contracts, trades, a market of 2,114 skins and a free-money quiz every 15 minutes. All money is pretend. Prices show in US dollars or Uzbek som.
+A demo CS2 skin site: 47 cases, case battles, upgrades, contracts, trades, a market of 2,114 skins in every wear (6,759 items) and a free-money quiz every 15 minutes. All money is pretend. Prices show in US dollars or Uzbek som.
 
 The site runs in one of two modes, chosen automatically:
 
@@ -14,11 +14,15 @@ The site runs in one of two modes, chosen automatically:
 ### 1. Create the database (Supabase)
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. Open **SQL Editor**. Paste and run `supabase/migrations/0001_skinrush.sql`. This creates the tables, security rules and game functions.
-3. Paste and run `supabase/seed.sql`. This loads the 2,114 skins and 46 cases.
-   Then paste and run `supabase/migrations/0002_case_battles.sql`. This adds case battles.
-4. Go to **Authentication → Sign In / Providers → Email** and turn **off** “Confirm email”. Players sign up with a username and password only. The site turns each username into an internal address (`name@skinrush.local`) that is never emailed.
-5. Go to **Project Settings → API** and copy the **Project URL** and the **anon / publishable** key. Never use the `service_role` / secret key in this site; the build refuses it.
+2. Open **SQL Editor** and run these files in this order (paste each one, then **Run**):
+   1. `supabase/migrations/0001_skinrush.sql`: tables, security rules and game functions
+   2. `supabase/migrations/0002_case_battles.sql`: case battles
+   3. `supabase/migrations/0003_upgrades_and_wears.sql`: every wear as its own item, roll-over upgrades
+   4. `supabase/seed.sql`: the 6,759 items and 47 cases (it needs 0003 first)
+
+   Every file is safe to run again. To update an existing database, run any new migration files, then `seed.sql`.
+3. Go to **Authentication → Sign In / Providers**: keep the **Email** provider enabled and turn **off** “Confirm email”. Players sign up with a username and password only. The site turns each username into an internal address (`name@skinrush.local`) that is never emailed.
+4. Go to **Project Settings → API** and copy the **Project URL** and the **anon / publishable** key. Never use the `service_role` / secret key in this site; the build refuses it.
 
 ### 2. Put the site online (Vercel)
 
@@ -54,7 +58,8 @@ With the Vercel CLI instead of GitHub: run `vercel` in this folder, add the two 
 
 - **Rolls** are provably fair: `HMAC-SHA256(server seed, "client seed:nonce")`, first 13 hex digits ÷ 2^52. The site shows the server seed's SHA-256 hash before play and reveals the seed when you rotate it. The checker in the shield-icon menu re-computes any roll.
 - **Cases:** each case's odds sum to 100%. The average drop is worth about 90% of the case price (Souvenir: about 84%).
-- **Upgrade:** stake 1–4 skins. Your win chance is `stake ÷ target × 0.95`, capped at 80%.
+- **Upgrade:** stake 1–4 skins. Your win chance is `stake ÷ target × 0.95`, capped at 80%. With **Roll under**, you win when the roll is below the chance (green zone at the start of the dial). With **Roll over**, you win when the roll is at least `1 − chance` (green zone at the end). The odds are the same either way.
+- **Wears:** each skin is listed in every wear the market prices (FN, MW, FT, WW, BS), each at its own Skinport price. The skin's usual wear keeps the plain item id (for example `ak-47-redline`, FT); the other wears are `<id>-<wear>` (`ak-47-redline-bs`).
 - **Contracts:** put in 3–10 skins and get one back. Its target value is `total × 0.25 × 16^(roll^2.07)`, between 0.25× and 4× the total and 0.9× on average. You get the catalog skin priced closest to that value.
 - **Quiz:** every 15 minutes you get 3 tries to name a skin, worth $1,000. In Supabase mode the answer stays on the server.
 - **Trade:** swap skins with the bot, with the value difference paid from or to your balance.

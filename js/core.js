@@ -282,7 +282,7 @@
 
   /* ---------- skin quiz: every 15 minutes, 3 tries to name a skin for $1,000 ---------- */
   const rand = n => Math.floor(Math.random() * n);
-  const quizPool = SR.ITEM_LIST.filter(i => i.type !== 'Sticker' && !/Blue Gem/.test(i.finish) && i.finish !== 'Vanilla');
+  const quizPool = SR.ITEM_LIST.filter(i => i.main !== false && i.type !== 'Sticker' && !/Blue Gem/.test(i.finish) && i.finish !== 'Vanilla');
   function makeQuestion() {
     const correct = quizPool[rand(quizPool.length)];
     const names = new Set([SR.fullName(correct)]);

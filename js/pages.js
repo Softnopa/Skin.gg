@@ -128,7 +128,7 @@
         stage.innerHTML = `<div class="reels reels-${count}"></div>`;
         const host = stage.firstElementChild;
         const reels = results.map(r => new SR.Reel(host, c, r.entry.id, { compact: count > 1 }));
-        const duration = SR.reducedMotion() ? 1200 : SR.store.state.fast ? 2200 : 6500;
+        const duration = SR.reducedMotion() ? 1200 : SR.store.state.fast ? 2200 : 8500;
         SR.audio.spinUp();
         await Promise.all(reels.map((rl, i) => rl.spin(duration, { sound: i === 0 })));
 
@@ -248,16 +248,17 @@
   const COLORS = ['all', 'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'white', 'black'];
   const PAGE = 60;
 
-  const market = { q: '', tier: 'all', type: 'all', color: 'all', sort: 'desc', limit: PAGE };
+  const market = { q: '', tier: 'all', type: 'all', color: 'all', wear: 'all', sort: 'desc', limit: PAGE };
   pages.market = {
     title: 'Market',
     render() {
       return `
       <section class="wrap section">
-        <div class="page-head"><h1>Market</h1><p>${fmt(SR.ITEM_LIST.length)} skins at current market prices. A purchase lands in your inventory right away.</p></div>
+        <div class="page-head"><h1>Market</h1><p>${fmt(SR.ITEM_LIST.filter(i => i.main).length)} skins in every wear the market prices (${fmt(SR.ITEM_LIST.length)} items), each wear at its own price. A purchase lands in your inventory right away.</p></div>
         <div class="toolbar">
           <input class="input" type="search" id="mq" placeholder="Search skins, e.g. Karambit" value="${esc(market.q)}" aria-label="Search skins">
           <select class="input select" id="mtype" aria-label="Type">${TYPES.map(t => `<option value="${t}" ${market.type === t ? 'selected' : ''}>${t === 'all' ? 'All types' : t === 'Knife' ? 'Knives' : t === 'Heavy' ? 'Heavy' : t + 's'}</option>`).join('')}</select>
+          <select class="input select" id="mwear" aria-label="Wear">${['all', 'FN', 'MW', 'FT', 'WW', 'BS'].map(w => `<option value="${w}" ${market.wear === w ? 'selected' : ''}>${w === 'all' ? 'All wears' : SR.WEAR_NAMES[w]}</option>`).join('')}</select>
           <select class="input select" id="mcolor" aria-label="Colour">${COLORS.map(c => `<option value="${c}" ${market.color === c ? 'selected' : ''}>${c === 'all' ? 'All colours' : c[0].toUpperCase() + c.slice(1)}</option>`).join('')}</select>
           <select class="input select" id="msort" aria-label="Sort">
             <option value="desc" ${market.sort === 'desc' ? 'selected' : ''}>Price: high to low</option>
@@ -278,7 +279,8 @@
       let alive = true;
       const draw = () => {
         let list = SR.ITEM_LIST.filter(it => matchTier(it, market.tier) && matchQ(it, market.q)
-          && (market.type === 'all' || it.type === market.type) && (market.color === 'all' || it.color === market.color));
+          && (market.type === 'all' || it.type === market.type) && (market.color === 'all' || it.color === market.color)
+          && (market.wear === 'all' || it.wear === market.wear));
         list.sort(market.sort === 'asc' ? (a, b) => a.price - b.price : market.sort === 'name' ? (a, b) => SR.fullName(a).localeCompare(SR.fullName(b)) : byPriceDesc);
         $('#mcount', root).textContent = `${fmt(list.length)} ${list.length === 1 ? 'skin' : 'skins'}`;
         grid.innerHTML = list.length ? list.slice(0, market.limit).map(it => SR.itemCard(it, {
@@ -294,6 +296,7 @@
       $('#msort', root).addEventListener('change', e => { market.sort = e.target.value; reset(); });
       $('#mtype', root).addEventListener('change', e => { market.type = e.target.value; reset(); });
       $('#mcolor', root).addEventListener('change', e => { market.color = e.target.value; reset(); });
+      $('#mwear', root).addEventListener('change', e => { market.wear = e.target.value; reset(); });
       $('#mmore', root).addEventListener('click', () => { market.limit += PAGE; draw(); });
       root.addEventListener('click', e => {
         const chip = e.target.closest('[data-tier]');
@@ -404,41 +407,63 @@
   }
 
   /* ================= UPGRADE ================= */
-  const upg = { stake: [], target: null, q: '' };
-  const MAX_STAKE = 4, HOUSE = 0.95, CAP = 0.8;
-  const R = 96, CIRC = 2 * Math.PI * R;
+  const upg = { stake: [], target: null, q: '', wear: 'all', side: 'under', history: [] };
+  const MAX_STAKE = 4, CAP = 0.8;
+  const R = 100, CIRC = 2 * Math.PI * R;
+  const TICKS = 72;
 
   pages.upgrade = {
     title: 'Upgrade',
     render() {
+      const ticks = [...Array(TICKS).keys()].map(i => {
+        const a = (i / TICKS) * 2 * Math.PI - Math.PI / 2, r1 = 116, r2 = i % 6 === 0 ? 126 : 121;
+        return `<line class="tk" data-tk="${i}" x1="${(130 + r1 * Math.cos(a)).toFixed(1)}" y1="${(130 + r1 * Math.sin(a)).toFixed(1)}" x2="${(130 + r2 * Math.cos(a)).toFixed(1)}" y2="${(130 + r2 * Math.sin(a)).toFixed(1)}"/>`;
+      }).join('');
       return `
       <section class="wrap section">
-        <div class="page-head"><h1>Upgrade</h1><p>Stake up to ${MAX_STAKE} skins for a chance at a pricier one. The bigger the jump, the lower the chance.</p></div>
+        <div class="page-head"><h1>Upgrade</h1><p>Stake up to ${MAX_STAKE} skins for a chance at a pricier one. The bigger the jump, the lower the chance. If the needle stops in the green zone, you win the target.</p></div>
         <div class="upg-stage">
           <div class="upg-slot" id="slot-in"></div>
           <div class="upg-dial" id="dial">
-            <svg viewBox="0 0 240 240" aria-hidden="true">
-              <circle cx="120" cy="120" r="${R}" class="dial-track"/>
-              <circle cx="120" cy="120" r="${R}" class="dial-arc" id="arc" transform="rotate(-90 120 120)" stroke-dasharray="0 ${CIRC}"/>
-              <g id="needle" class="dial-needle"><path d="M120 8 L111 -6 H129 Z" transform="translate(0 14)"/></g>
+            <svg viewBox="0 0 260 260" aria-hidden="true">
+              <g class="dial-ticks">${ticks}</g>
+              <circle cx="130" cy="130" r="${R}" class="dial-track"/>
+              <circle cx="130" cy="130" r="${R}" class="dial-arc" id="arc" transform="rotate(-90 130 130)" stroke-dasharray="0 ${CIRC}"/>
+              <circle cx="130" cy="130" r="${R}" class="dial-tail" id="tail" transform="rotate(-90 130 130)" stroke-dasharray="0 ${CIRC}"/>
+              <g id="needle" class="dial-needle"><path d="M130 12 L120 -4 H140 Z" transform="translate(0 14)"/><circle cx="130" cy="30" r="4"/></g>
             </svg>
-            <div class="dial-center"><b id="chance">0%</b><span id="mult">Pick both sides</span></div>
+            <div class="dial-center"><b id="chance">0%</b><span id="mult">Pick both sides</span><small id="roll-out"></small></div>
+            <div class="sparks" id="sparks" aria-hidden="true"></div>
           </div>
           <div class="upg-slot" id="slot-out"></div>
         </div>
-        <div class="upg-actions">
-          <div class="chips" role="group" aria-label="Quick target">
+        <div class="upg-controls">
+          <div class="upg-side" role="group" aria-label="Win zone">
+            <button type="button" data-side="under" aria-pressed="${upg.side === 'under'}" class="${upg.side === 'under' ? 'on' : ''}">Roll under</button>
+            <button type="button" data-side="over" aria-pressed="${upg.side === 'over'}" class="${upg.side === 'over' ? 'on' : ''}">Roll over</button>
+          </div>
+          <div class="chips" role="group" aria-label="Pick a target by chance">
+            ${[75, 50, 25, 10, 5].map(c => `<button type="button" class="chip" data-chance="${c}">${c}%</button>`).join('')}
+          </div>
+          <div class="chips" role="group" aria-label="Pick a target by multiplier">
             ${[1.5, 2, 3, 5, 10].map(m => `<button type="button" class="chip" data-mult="${m}">x${m}</button>`).join('')}
           </div>
+          <label class="switch"><input type="checkbox" id="upg-fast" ${SR.store.state.fast ? 'checked' : ''}><span class="switch-ui" aria-hidden="true"></span>Fast</label>
           <button class="btn btn-go btn-lg" type="button" id="upg-go" disabled>Upgrade</button>
         </div>
+        <div class="upg-history" id="upg-history" aria-label="Your recent upgrades"></div>
         <div class="pickers">
           <div class="picker">
             <div class="picker-head"><h2>Your skins</h2><span class="muted" id="stake-hint"></span></div>
             <div class="item-grid item-grid-sm" id="pick-in"></div>
           </div>
           <div class="picker">
-            <div class="picker-head"><h2>Targets</h2><input class="input input-sm" type="search" id="tq" placeholder="Search" aria-label="Search targets" value="${esc(upg.q)}"></div>
+            <div class="picker-head"><h2>Targets</h2>
+              <span class="picker-tools">
+                <select class="input input-sm select" id="twear" aria-label="Wear">${['all', 'FN', 'MW', 'FT', 'WW', 'BS'].map(w => `<option value="${w}" ${upg.wear === w ? 'selected' : ''}>${w === 'all' ? 'Any wear' : SR.WEAR_NAMES[w]}</option>`).join('')}</select>
+                <input class="input input-sm" type="search" id="tq" placeholder="Search" aria-label="Search targets" value="${esc(upg.q)}">
+              </span>
+            </div>
             <div class="item-grid item-grid-sm" id="pick-out"></div>
           </div>
         </div>
@@ -452,10 +477,20 @@
       if (params.stake && st.inv.some(e => e.uid === params.stake)) { upg.stake = [params.stake]; upg.target = null; }
 
       const stakeValue = () => upg.stake.reduce((s, uid) => { const e = st.inv.find(x => x.uid === uid); return s + (e ? SR.item(e.id).price : 0); }, 0);
-      const chanceOf = () => {
-        const v = stakeValue(), t = upg.target && SR.item(upg.target);
-        if (!v || !t || t.price <= v) return 0;
-        return Math.min(CAP, v / t.price * HOUSE);
+      const chanceOf = () => { const t = upg.target && SR.item(upg.target); return SR.upgradeChance(stakeValue(), t && t.price); };
+      const inZone = (frac, ch) => SR.upgradeWins(frac, ch, upg.side);
+
+      // Green zone: [0, chance) for roll under, [1 − chance, 1) for roll over — clockwise from the top.
+      const drawZone = ch => {
+        $('#arc', root).setAttribute('stroke-dasharray', `${ch * CIRC} ${CIRC}`);
+        $('#arc', root).setAttribute('stroke-dashoffset', upg.side === 'over' ? String(-(1 - ch) * CIRC) : '0');
+        $$('.tk', root).forEach(el => el.classList.toggle('in', ch > 0 && inZone((+el.dataset.tk + 0.5) / TICKS, ch)));
+      };
+
+      const drawHistory = () => {
+        $('#upg-history', root).innerHTML = upg.history.length
+          ? upg.history.map(h => `<span class="uh ${h.won ? 'won' : 'lost'}" title="${h.won ? 'Won' : 'Lost'} ${esc(h.name)} at ${(h.chance * 100).toFixed(1)}%">${h.won ? '✓' : '✕'} x${h.mult.toFixed(2)}</span>`).join('')
+          : '<span class="muted">Your upgrades from this visit appear here.</span>';
       };
 
       const draw = () => {
@@ -470,13 +505,16 @@
           : `<div class="slot-empty">Pick skins from your inventory below</div>`;
         $('#slot-out', root).innerHTML = t
           ? `<span class="slot-img" style="--tc:${SR.tier(t).color}">${SR.pic(t)}</span>
-             <div class="slot-label"><span>${esc(t.weapon)} · ${esc(t.finish)}</span><b>${money(t.price)}</b></div>`
+             <div class="slot-label"><span>${esc(t.weapon)} · ${esc(t.finish)}${t.wear ? ` · ${t.wear}` : ''}</span><b>${money(t.price)}</b></div>`
           : `<div class="slot-empty">Pick a target skin</div>`;
 
-        $('#arc', root).setAttribute('stroke-dasharray', `${ch * CIRC} ${CIRC}`);
+        drawZone(ch);
         $('#chance', root).textContent = (ch * 100).toFixed(2) + '%';
-        $('#mult', root).textContent = t && v ? `x${(t.price / v).toFixed(2)}` : 'Pick both sides';
-        $('#upg-go', root).disabled = spinning || !ch;
+        $('#mult', root).textContent = t && v ? `x${(t.price / v).toFixed(2)} · roll ${upg.side}` : 'Pick both sides';
+        $('#roll-out', root).textContent = '';
+        const go = $('#upg-go', root);
+        go.disabled = spinning || !ch;
+        go.textContent = ch ? `Upgrade · ${(ch * 100).toFixed(1)}%` : 'Upgrade';
         $('#stake-hint', root).textContent = `${upg.stake.length}/${MAX_STAKE} selected`;
 
         $('#pick-in', root).innerHTML = st.inv.length ? st.inv.map(e => {
@@ -484,17 +522,24 @@
           return SR.itemCard(it, { cls: `pickable ${on ? 'on' : ''}`, attrs: `role="button" tabindex="0" aria-pressed="${on}" data-stake="${e.uid}"`, foot: `<span class="price">${money(it.price)}</span>` });
         }).join('') : `<div class="empty-inline">No skins yet. <a href="#/">Open a case</a> or <a href="#/market">buy one</a> first.</div>`;
 
-        const targets = SR.ITEM_LIST.filter(it => it.price > v && matchQ(it, upg.q)).sort((a, b) => a.price - b.price).slice(0, 80);
+        const targets = SR.ITEM_LIST.filter(it => it.price > v && matchQ(it, upg.q) && (upg.wear === 'all' || it.wear === upg.wear)).sort((a, b) => a.price - b.price).slice(0, 80);
         $('#pick-out', root).innerHTML = targets.length ? targets.map(it => {
           const on = upg.target === it.id;
-          const c = v ? Math.min(CAP, v / it.price * HOUSE) : 0;
+          const c = SR.upgradeChance(v, it.price);
           return SR.itemCard(it, { cls: `pickable ${on ? 'on' : ''}`, attrs: `role="button" tabindex="0" aria-pressed="${on}" data-target="${it.id}"`,
             top: v ? `<span>${(c * 100).toFixed(1)}%</span>` : '', foot: `<span class="price">${money(it.price)}</span>` });
-        }).join('') : `<div class="empty-inline">Nothing in the catalog is worth more than your stake. Try staking less.</div>`;
+        }).join('') : `<div class="empty-inline">No skins above your stake match. Try another wear or a shorter search.</div>`;
+        drawHistory();
       };
       draw();
       SR.onPage('state', () => alive && !spinning && draw());
 
+      // Nearest catalog item to a wanted price (respecting the wear filter).
+      const nearestTarget = goal => {
+        const v = stakeValue();
+        return SR.ITEM_LIST.filter(it => it.price > v && (upg.wear === 'all' || it.wear === upg.wear))
+          .sort((a, b) => Math.abs(a.price - goal) - Math.abs(b.price - goal))[0];
+      };
       root.addEventListener('click', e => {
         if (spinning) return;
         const s = e.target.closest('[data-stake]');
@@ -507,68 +552,115 @@
         }
         const t = e.target.closest('[data-target]');
         if (t) { upg.target = upg.target === t.dataset.target ? null : t.dataset.target; SR.audio.click(); draw(); return; }
-        const m = e.target.closest('[data-mult]');
-        if (m) {
+        const side = e.target.closest('[data-side]');
+        if (side) {
+          upg.side = side.dataset.side;
+          $$('[data-side]', root).forEach(b => { b.classList.toggle('on', b === side); b.setAttribute('aria-pressed', b === side); });
+          SR.audio.click(); draw(); return;
+        }
+        const m = e.target.closest('[data-mult]'), c = e.target.closest('[data-chance]');
+        if (m || c) {
           const v = stakeValue();
           if (!v) { SR.toast('Pick skins to stake first'); return; }
-          const goal = v * +m.dataset.mult;
-          const best = SR.ITEM_LIST.filter(it => it.price > v).sort((a, b) => Math.abs(a.price - goal) - Math.abs(b.price - goal))[0];
+          // chance = stake / target × 0.95  →  target = stake × 0.95 / chance
+          const goal = m ? v * +m.dataset.mult : v * 0.95 / (Math.min(+c.dataset.chance, CAP * 100) / 100);
+          const best = nearestTarget(goal);
           if (best) { upg.target = best.id; SR.audio.click(); draw(); }
         }
       });
       $('#tq', root).addEventListener('input', e => { upg.q = e.target.value; draw(); });
+      $('#twear', root).addEventListener('change', e => { upg.wear = e.target.value; draw(); });
+      $('#upg-fast', root).addEventListener('change', e => { st.fast = e.target.checked; SR.store.save(); });
       $('#upg-go', root).addEventListener('click', go);
+
+      function sparks(color) {
+        const box = $('#sparks', root);
+        box.innerHTML = [...Array(26).keys()].map(i => {
+          const a = (i / 26) * 2 * Math.PI + Math.random() * 0.3, d = 110 + Math.random() * 90;
+          return `<i style="--x:${(Math.cos(a) * d).toFixed(0)}px;--y:${(Math.sin(a) * d).toFixed(0)}px;--c:${i % 3 ? color : 'var(--ember-2)'};animation-delay:${(Math.random() * 120).toFixed(0)}ms"></i>`;
+        }).join('');
+        setTimeout(() => { box.innerHTML = ''; }, 1400);
+      }
 
       async function go() {
         const ch = chanceOf();
         if (!ch || spinning) return;
         spinning = true;
-        const dial = $('#dial', root);
-        dial.classList.remove('win', 'lose');
+        const dial = $('#dial', root), stage = $('.upg-stage', root);
+        dial.classList.remove('win', 'lose', 'in-zone', 'out-zone');
+        stage.classList.remove('won', 'lost');
         $('#upg-go', root).disabled = true;
         $('#upg-go', root).textContent = 'Rolling…';
-        const target = upg.target, stake = [...upg.stake];
+        const target = upg.target, stake = [...upg.stake], v = stakeValue(), side = upg.side;
         // The outcome is settled before the needle moves, so a reload mid-spin can't dodge it.
         let roll, won;
-        try { ({ roll, won } = await SR.game.upgrade(stake, target)); }
+        try { ({ roll, won } = await SR.game.upgrade(stake, target, side)); }
         catch (e) {
           spinning = false;
-          $('#upg-go', root).textContent = 'Upgrade';
           SR.toast(SR.errorText(e), 'bad');
           upg.stake = []; draw();
           return;
         }
 
-        // Needle lands exactly on the roll: the green arc covers [0, chance) clockwise from the top.
+        // Needle lands exactly on the roll (fraction of a full turn, clockwise from the top).
+        const fast = st.fast || SR.reducedMotion();
         const from = needleDeg % 360;
-        const to = 360 * 5 + roll.value * 360;
-        const dur = SR.reducedMotion() ? 600 : 4200;
-        const ease = t => 1 - Math.pow(1 - t, 4);
-        const needle = $('#needle', root);
-        let lastTick = 0, lastSeg = -1;
+        const to = 360 * (fast ? 3 : 6) + roll.value * 360;
+        const dur = SR.reducedMotion() ? 600 : fast ? 1800 : 5600;
+        const ease = t => 1 - Math.pow(1 - t, 5);
+        const needle = $('#needle', root), tail = $('#tail', root);
+        let lastTick = 0, lastSeg = -1, lastZone = null;
+        SR.audio.spinUp();
         await new Promise(res => {
           const t0 = performance.now();
+          let prev = from;
           const f = now => {
             const p = Math.min(1, (now - t0) / dur);
             const d = from + (to - from) * ease(p);
-            needle.setAttribute('transform', `rotate(${d} 120 120)`);
-            const seg = Math.floor(d / 24);
-            if (seg !== lastSeg && now - lastTick > 40) { SR.audio.tick(); lastTick = now; lastSeg = seg; }
+            needle.setAttribute('transform', `rotate(${d} 130 130)`);
+            // comet tail: the arc swept in the last frames
+            const swept = Math.min(120, Math.max(4, (d - prev) * 6));
+            tail.setAttribute('stroke-dasharray', `${(swept / 360) * CIRC} ${CIRC}`);
+            tail.setAttribute('stroke-dashoffset', String(-(((d - swept) % 360) / 360) * CIRC));
+            prev = d;
+            const seg = Math.floor(d / 20);
+            if (seg !== lastSeg && now - lastTick > 34) { SR.audio.tick(); lastTick = now; lastSeg = seg; }
+            // last lap: the dial glows green while the needle is inside the win zone, red outside
+            if (p > 0.55) {
+              const z = inZone((((d % 360) + 360) % 360) / 360, ch);
+              if (z !== lastZone) { dial.classList.toggle('in-zone', z); dial.classList.toggle('out-zone', !z); lastZone = z; }
+            }
             if (p < 1) requestAnimationFrame(f); else res();
           };
           requestAnimationFrame(f);
         });
         needleDeg = to;
+        tail.setAttribute('stroke-dasharray', `0 ${CIRC}`);
+        dial.classList.remove('in-zone', 'out-zone');
 
+        const it = SR.item(target);
         dial.classList.add(won ? 'win' : 'lose');
+        stage.classList.add(won ? 'won' : 'lost');
         $('#chance', root).textContent = won ? 'Won' : 'Lost';
-        if (won) { SR.audio.win(SR.tier(SR.item(target)).rank); SR.toast(`Upgraded to ${esc(SR.fullName(SR.item(target)))}`, 'good'); SR.drops.push(target, null, true); }
-        else { SR.audio.lose(); SR.toast('Upgrade lost. Your stake is gone.', 'bad'); }
-        await wait(1600);
+        $('#mult', root).textContent = won ? `+${SR.price(it.price - v)}` : `−${SR.price(v)}`;
+        $('#roll-out', root).textContent = `Roll ${roll.value.toFixed(4)} · ${side === 'over' ? `needed ≥ ${(1 - ch).toFixed(4)}` : `needed < ${ch.toFixed(4)}`}`;
+        upg.history.unshift({ won, chance: ch, mult: it.price / v, name: SR.fullName(it) });
+        upg.history = upg.history.slice(0, 14);
+        drawHistory();
+        if (won) {
+          sparks(SR.tier(it).color);
+          SR.audio.win(Math.max(5, SR.tier(it).rank));
+          SR.toast(`Upgraded to ${esc(SR.fullName(it))}${it.wear ? ` (${it.wear})` : ''}`, 'good');
+          SR.drops.push(target, null, true);
+        } else {
+          SR.audio.lose();
+          SR.toast('Upgrade lost. Your stake is gone.', 'bad');
+        }
+        await wait(fast ? 1100 : 2000);
         spinning = false;
         upg.stake = []; upg.target = null;
         dial.classList.remove('win', 'lose');
-        $('#upg-go', root).textContent = 'Upgrade';
+        stage.classList.remove('won', 'lost');
         if (alive) draw();
       }
       return () => { alive = false; };

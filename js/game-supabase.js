@@ -88,9 +88,10 @@
     },
     async sell(uids) { const d = await this.call('sell_items', { p_uids: uids }); return { count: d.count, total: Number(d.total) }; },
     async buy(itemId) { const d = await this.call('buy_item', { p_item: itemId }); return { entry: d.entry }; },
-    async upgrade(uids, targetId) {
-      const d = await this.call('upgrade_item', { p_uids: uids, p_target: targetId });
-      return { won: d.won, roll: { value: d.roll, nonce: d.nonce }, chance: d.chance, entry: d.entry };
+    async upgrade(uids, targetId, side = 'under') {
+      // Only send the side for roll-over, so roll-under also works on databases without 0003.
+      const d = await this.call('upgrade_item', side === 'over' ? { p_uids: uids, p_target: targetId, p_side: side } : { p_uids: uids, p_target: targetId });
+      return { won: d.won, roll: { value: d.roll, nonce: d.nonce }, chance: d.chance, side: d.side || side, entry: d.entry };
     },
     async trade(giveUids, getIds) { const d = await this.call('trade_items', { p_give: giveUids, p_get: getIds }); return { received: d.received, diff: Number(d.diff) }; },
     async contract(uids) {

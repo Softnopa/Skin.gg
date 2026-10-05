@@ -27,6 +27,8 @@
     CONTRACT_MIN: 3, CONTRACT_MAX: 10, CONTRACT_LO: 0.25, CONTRACT_HI: 4, CONTRACT_P: 2.07,
   };
   const R = SR.RULES;
+  // Roll under: win when roll < chance (green zone at the start of the dial). Roll over: win when roll ≥ 1 − chance.
+  SR.upgradeWins = (roll, chance, side) => (side === 'over' ? roll >= 1 - chance : roll < chance);
   SR.upgradeChance = (stake, target) => (!stake || !target || target <= stake ? 0 : Math.min(R.UPGRADE_CAP, stake / target * R.UPGRADE_HOUSE));
   // Contract result value = total × 0.25 × 16^(roll^2.07): log-scaled from 0.25× to 4×, average ≈ 0.90×.
   SR.contractMultiplier = r => R.CONTRACT_LO * Math.pow(R.CONTRACT_HI / R.CONTRACT_LO, Math.pow(r, R.CONTRACT_P));
@@ -80,19 +82,19 @@
       return { entry: SR.store.addItem(it.id, 'market') };
     },
 
-    async upgrade(uids, targetId) {
+    async upgrade(uids, targetId, side = 'under') {
       if (!uids.length || uids.length > R.UPGRADE_MAX_STAKE) throw err('bad_request');
       const stake = value(owned(uids)), t = SR.item(targetId);
       const chance = SR.upgradeChance(stake, t && t.price);
       if (!chance) throw err('bad_request');
       const roll = await SR.fair.roll();
-      const won = roll.value < chance;
+      const won = SR.upgradeWins(roll.value, chance, side);
       SR.store.take(uids);
       let entry = null;
       if (won) entry = SR.store.addItem(t.id, 'upgrade');
       st().stats.upgrades += 1; if (won) st().stats.upgradesWon += 1;
       SR.store.save();
-      return { won, roll, chance, entry };
+      return { won, roll, chance, side, entry };
     },
 
     async trade(giveUids, getIds) {
