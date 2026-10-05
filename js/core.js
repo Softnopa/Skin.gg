@@ -258,6 +258,13 @@
       const h = await hmac(server, `${client}:${nonce}`);
       return { hash: h, value: parseInt(h.slice(0, 13), 16) / 2 ** 52 };
     },
+    // Battles: roll = HMAC_SHA256(battle seed, message) → [0,1). Messages are "<battle id>:<round>:<seat>" and "<battle id>:tie".
+    async rollMsg(seed, msg) {
+      const h = subtle ? await hmac(seed, msg) : randHex(32);
+      return parseInt(h.slice(0, 13), 16) / 2 ** 52;
+    },
+    randHex,
+    sha256: s => (subtle ? sha256(s) : Promise.resolve('')),
   };
 
   /* Weighted pick: walk the case contents in their published order. */

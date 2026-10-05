@@ -340,6 +340,7 @@
             <div><dt>Upgrades won</dt><dd>${st.stats.upgradesWon} of ${st.stats.upgrades}</dd></div>
             <div><dt>Quizzes won</dt><dd>${st.stats.quizWon}</dd></div>
             <div><dt>Contracts signed</dt><dd>${st.stats.contracts || 0}</dd></div>
+            <div><dt>Battles won</dt><dd>${st.stats.battlesWon || 0} of ${st.stats.battles || 0}</dd></div>
             <div><dt>Best drop</dt><dd>${best ? `<span style="color:${SR.tier(best).color}">${esc(SR.fullName(best))}</span>` : '—'}</dd></div>
           </dl>
           ${inv.length ? `<div class="item-grid">${inv.slice(0, shown).map(e => {
@@ -399,7 +400,7 @@
   };
   function srcLabel(src = '') {
     if (src.startsWith('case:')) { const c = SR.caseById(src.slice(5)); return c ? `${esc(c.name)} case` : 'Case'; }
-    return { market: 'Market', upgrade: 'Upgrade', trade: 'Trade', contract: 'Contract' }[src] || '';
+    return { market: 'Market', upgrade: 'Upgrade', trade: 'Trade', contract: 'Contract', battle: 'Case battle' }[src] || '';
   }
 
   /* ================= UPGRADE ================= */

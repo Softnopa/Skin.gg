@@ -13,6 +13,8 @@
     const params = Object.fromEntries(new URLSearchParams(qs || ''));
     let name = 'home';
     if (parts[0] === 'case') { name = 'case'; params.id = parts[1]; }
+    else if (parts[0] === 'battles' && parts[1] === 'new') name = 'battleNew';
+    else if (parts[0] === 'battle') { name = 'battle'; params.id = parts[1]; }
     else if (SR.pages[parts[0]]) name = parts[0];
 
     if (cleanup) cleanup();
@@ -26,7 +28,7 @@
 
     const c = name === 'case' && SR.caseById(params.id);
     document.title = `${c ? c.name + ' case' : page.title} · SkinRush demo`;
-    $$('[data-nav]').forEach(a => a.classList.toggle('on', a.dataset.nav === (name === 'case' ? 'home' : name)));
+    $$('[data-nav]').forEach(a => a.classList.toggle('on', a.dataset.nav === (name === 'case' ? 'home' : name === 'battle' || name === 'battleNew' ? 'battles' : name)));
     window.scrollTo(0, 0);
   }
   window.addEventListener('hashchange', route);

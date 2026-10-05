@@ -14,6 +14,8 @@
     quiz_not_ready: 'The quiz isn’t open yet.',
     not_signed_in: 'You’re signed out. Reload the page to sign in again.',
     not_admin: 'Only admins can do that.',
+    battle_closed: 'That battle already started or was cancelled.',
+    already_joined: 'You’re already in this battle.',
     no_such_user: 'No account with that username.',
   };
   SR.errorText = e => MESSAGES[e && e.code] || 'Something went wrong. Check your connection and try again.';
@@ -131,6 +133,50 @@
 
     async rotateSeed() { await SR.fair.rotate(); },
     async setClientSeed(v) { st().fair.client = v; SR.store.save(); },
+
+    /* ---------- case battles (local: you against bots, kept for this visit) ---------- */
+    battles: new Map(),
+    seeds: new Map(),
+    myId: () => 'me',
+    subscribeBattles: () => () => {},
+    async listBattles() { return [...local.battles.values()].sort((a, b) => b.createdAt - a.createdAt); },
+    async getBattle(id) { return local.battles.get(id) || null; },
+    async createBattle(cases, mode, crazy) {
+      const m = SR.BATTLE.MODES[mode];
+      if (!m || !cases.length || cases.length > SR.BATTLE.MAX_ROUNDS || cases.some(id => !SR.caseById(id))) throw err('bad_request');
+      const cost = Math.round(cases.reduce((s, id) => s + SR.caseById(id).price, 0) * 100) / 100;
+      if (!SR.store.spend(cost)) throw err('insufficient_funds');
+      const id = 'local-' + SR.uid(), seed = SR.fair.randHex(32);
+      const b = {
+        id, creator: 'me', creatorName: 'You', mode, crazy: !!crazy, cases: [...cases], seats: m.seats, cost,
+        status: 'open', serverHash: await SR.fair.sha256(seed), seed: null, winnerTeam: null,
+        createdAt: Date.now(), startedAt: null, players: [{ seat: 0, userId: 'me', name: 'You', bot: false }], drops: [],
+      };
+      local.seeds.set(id, seed); local.battles.set(id, b);
+      return { battle: b };
+    },
+    async joinBattle() { throw err('bad_request'); },
+    async callBots(id) {
+      const b = local.battles.get(id);
+      if (!b || b.status !== 'open') throw err('bad_request');
+      for (let s = 0; s < b.seats; s++) if (!b.players.some(p => p.seat === s)) b.players.push({ seat: s, userId: null, name: SR.BATTLE.BOT_NAMES[s], bot: true });
+      b.players.sort((x, y) => x.seat - y.seat);
+      const seed = local.seeds.get(id);
+      const { drops, winnerTeam } = await SR.battleOutcome(b, seed);
+      drops.filter(d => d.wonBy === 0).forEach(d => SR.store.addItem(d.id, 'battle'));
+      st().stats.battles = (st().stats.battles || 0) + 1;
+      if (SR.battleTeamOf(b.mode, 0) === winnerTeam) st().stats.battlesWon = (st().stats.battlesWon || 0) + 1;
+      SR.store.save();
+      Object.assign(b, { drops, winnerTeam, status: 'done', seed, startedAt: Date.now() });
+      return { battle: b };
+    },
+    async cancelBattle(id) {
+      const b = local.battles.get(id);
+      if (!b || b.status !== 'open') throw err('bad_request');
+      b.status = 'cancelled';
+      SR.store.credit(b.cost);
+      return { battle: b };
+    },
   };
 
   SR.game = local;

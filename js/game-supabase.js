@@ -3,7 +3,7 @@
    Activated by app.js when js/config.js has a Supabase URL and anon key. */
 (() => {
   const SR = window.SR;
-  const KNOWN = ['insufficient_funds', 'not_owned', 'bad_request', 'quiz_not_ready', 'not_signed_in', 'not_admin', 'no_such_user'];
+  const KNOWN = ['insufficient_funds', 'not_owned', 'bad_request', 'quiz_not_ready', 'not_signed_in', 'not_admin', 'no_such_user', 'battle_closed', 'already_joined'];
 
   const remote = {
     mode: 'supabase',
@@ -43,6 +43,27 @@
       return data.user;
     },
     async signOut() { await this.sb.auth.signOut(); location.reload(); },
+
+    /* ---------- case battles (server-run, everyone sees the same battle) ---------- */
+    myId() { return this.user && this.user.id; },
+    normBattle(b) {
+      if (!b) return null;
+      return { ...b, cost: Number(b.cost), drops: (b.drops || []).map(d => ({ ...d, price: Number(d.price) })) };
+    },
+    async listBattles() { const d = await this.call('list_battles'); return (d || []).map(b => this.normBattle(b)); },
+    async getBattle(id) { return this.normBattle(await this.call('get_battle', { p_id: id })); },
+    async createBattle(cases, mode, crazy) { const d = await this.call('create_battle', { p_cases: cases, p_mode: mode, p_crazy: !!crazy }); return { battle: this.normBattle(d.battle) }; },
+    async joinBattle(id) { const d = await this.call('join_battle', { p_id: id }); return { battle: this.normBattle(d.battle) }; },
+    async callBots(id) { const d = await this.call('call_bots', { p_id: id }); return { battle: this.normBattle(d.battle) }; },
+    async cancelBattle(id) { const d = await this.call('cancel_battle', { p_id: id }); return { battle: this.normBattle(d.battle) }; },
+    // Realtime: any change to battles or seats calls fn({ id } or { battle_id }). Returns an unsubscribe function.
+    subscribeBattles(fn) {
+      const ch = this.sb.channel('battles-' + Math.random().toString(36).slice(2))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'battles' }, p => fn(p.new || p.old))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'battle_seats' }, p => fn(p.new || p.old))
+        .subscribe();
+      return () => { try { this.sb.removeChannel(ch); } catch (e) { /* already gone */ } };
+    },
 
     /* ---------- admin ---------- */
     async adminDeposit(username, amount) {

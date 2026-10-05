@@ -32,29 +32,29 @@
   }
   SR.ease = bezier(0.1, 1, 0.1, 1);
 
-  const LENGTH = 72;      // cards on the strip
-  const WIN_INDEX = 62;   // where the winner sits
-
   /* Filler uses the case's own weights, so commons crowd the strip and top-tier items stay rare. */
-  function buildStrip(c, winnerId) {
+  function buildStrip(c, winnerId, length, winIndex) {
     const ids = [];
-    for (let i = 0; i < LENGTH; i++) ids.push(SR.pickWeighted(c.contents, Math.random()));
-    ids[WIN_INDEX] = winnerId;
+    for (let i = 0; i < length; i++) ids.push(SR.pickWeighted(c.contents, Math.random()));
+    ids[winIndex] = winnerId;
     // Near miss: sometimes park a high-tier item right next to the winner.
     if (Math.random() < 0.4) {
       const rare = c.contents.map(x => SR.item(x.id)).sort((a, b) => b.price - a.price)[Math.floor(Math.random() * 3)];
-      if (rare && rare.id !== winnerId) ids[WIN_INDEX + (Math.random() < 0.5 ? -1 : 1)] = rare.id;
+      if (rare && rare.id !== winnerId) ids[winIndex + (Math.random() < 0.5 ? -1 : 1)] = rare.id;
     }
     return ids;
   }
 
+  /* Horizontal reel for cases; `vertical` gives the narrow up-and-down reel used in battle columns. */
   class Reel {
-    constructor(host, c, winnerId, { compact = false } = {}) {
+    constructor(host, c, winnerId, { compact = false, vertical = false, length = 72, winIndex = 62 } = {}) {
       this.c = c;
       this.winnerId = winnerId;
-      this.ids = buildStrip(c, winnerId);
+      this.vertical = vertical;
+      this.winIndex = winIndex;
+      this.ids = buildStrip(c, winnerId, length, winIndex);
       this.el = document.createElement('div');
-      this.el.className = 'reel' + (compact ? ' reel-compact' : '');
+      this.el.className = 'reel' + (compact ? ' reel-compact' : '') + (vertical ? ' reel-v' : '');
       this.el.innerHTML = `<div class="reel-track">${this.ids.map((id, i) => {
           const it = SR.item(id), t = SR.tier(it);
           return `<div class="rcard" style="--tc:${t.color}" data-i="${i}">
@@ -69,10 +69,13 @@
 
     geometry() {
       const cards = this.track.children;
-      const cardW = cards[0].offsetWidth;
-      const step = cards[1].offsetLeft - cards[0].offsetLeft;
-      return { W: this.el.clientWidth, cardW, step };
+      if (this.vertical) {
+        return { W: this.el.clientHeight, cardW: cards[0].offsetHeight, step: cards[1].offsetTop - cards[0].offsetTop };
+      }
+      return { W: this.el.clientWidth, cardW: cards[0].offsetWidth, step: cards[1].offsetLeft - cards[0].offsetLeft };
     }
+
+    move(x) { this.track.style.transform = this.vertical ? `translate3d(0,${-x}px,0)` : `translate3d(${-x}px,0,0)`; }
 
     /* Tween the strip from x0 to x1, ticking whenever a card edge crosses the marker. */
     tween(x0, x1, duration, ease, sound, W, step) {
@@ -82,7 +85,7 @@
         const frame = now => {
           const p = duration ? Math.min(1, (now - t0) / duration) : 1;
           const x = x0 + (x1 - x0) * ease(p);
-          this.track.style.transform = `translate3d(${-x}px,0,0)`;
+          this.move(x);
           const idx = Math.floor((x + W / 2) / step);
           if (idx !== lastIdx) {
             if (sound && now - lastTick > 26) { SR.audio.tick(); lastTick = now; }
@@ -101,7 +104,7 @@
       const { W, cardW, step } = this.geometry();
       const slack = cardW / 2 - 8;
       const offset = (Math.random() * 2 - 1) * slack;
-      const centre = WIN_INDEX * step + cardW / 2 - W / 2;
+      const centre = this.winIndex * step + cardW / 2 - W / 2;
       const start = Math.random() * step * 0.5;
       this.el.classList.add('spinning');
       await this.tween(start, centre + offset, duration, SR.ease, sound, W, step);
@@ -112,10 +115,18 @@
         const inOut = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
         await this.tween(centre + offset, centre, 650, inOut, false, W, step);
       } else {
-        this.track.style.transform = `translate3d(${-centre}px,0,0)`;
+        this.move(centre);
       }
       this.el.classList.add('done');
-      this.track.children[WIN_INDEX].classList.add('is-win');
+      this.track.children[this.winIndex].classList.add('is-win');
+    }
+
+    /* Jump straight to the result (for battles that finished before you arrived). */
+    showResult() {
+      const { W, cardW, step } = this.geometry();
+      this.move(this.winIndex * step + cardW / 2 - W / 2);
+      this.el.classList.add('done');
+      this.track.children[this.winIndex].classList.add('is-win');
     }
   }
 
