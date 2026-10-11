@@ -432,49 +432,79 @@
   /* ================= UPGRADE ================= */
   const upg = { stake: [], target: null, q: '', wear: 'all', side: 'under', history: [] };
   const MAX_STAKE = 4, CAP = 0.8;
-  const R = 100, CIRC = 2 * Math.PI * R;
+  const R = 92, CIRC = 2 * Math.PI * R;
   const TICKS = 72;
+  const GHOST = 'ak-47-redline';      // silhouette shown in empty slots
+
+  const chanceLabel = ch => (!ch ? ['Pick both sides', ''] : ch < 0.25 ? ['Risky chance', 'risky'] : ch < 0.5 ? ['Fair chance', 'fair'] : ['Safe chance', 'safe']);
 
   pages.upgrade = {
     title: 'Upgrade',
     render() {
       const ticks = [...Array(TICKS).keys()].map(i => {
-        const a = (i / TICKS) * 2 * Math.PI - Math.PI / 2, r1 = 116, r2 = i % 6 === 0 ? 126 : 121;
+        const a = (i / TICKS) * 2 * Math.PI - Math.PI / 2, r1 = 104, r2 = i % 6 === 0 ? 114 : 109;
         return `<line class="tk" data-tk="${i}" x1="${(130 + r1 * Math.cos(a)).toFixed(1)}" y1="${(130 + r1 * Math.sin(a)).toFixed(1)}" x2="${(130 + r2 * Math.cos(a)).toFixed(1)}" y2="${(130 + r2 * Math.sin(a)).toFixed(1)}"/>`;
       }).join('');
       return `
-      <section class="wrap section">
-        <div class="page-head"><h1>Upgrade</h1><p>Stake up to ${MAX_STAKE} skins for a chance at a pricier one. The bigger the jump, the lower the chance. If the needle stops in the green zone, you win the target.</p></div>
+      <section class="wrap section upg2">
+        <div class="upg-top"><button class="upg-how" type="button" data-act="how"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm-1-5h2v2h-2zm0-8h2v6h-2z" fill="currentColor"/></svg>How does it work?</button></div>
         <div class="upg-stage">
-          <div class="upg-slot" id="slot-in"></div>
-          <div class="upg-dial" id="dial">
-            <svg viewBox="0 0 260 260" aria-hidden="true">
-              <g class="dial-ticks">${ticks}</g>
-              <circle cx="130" cy="130" r="${R}" class="dial-track"/>
-              <circle cx="130" cy="130" r="${R}" class="dial-arc" id="arc" transform="rotate(-90 130 130)" stroke-dasharray="0 ${CIRC}"/>
-              <circle cx="130" cy="130" r="${R}" class="dial-tail" id="tail" transform="rotate(-90 130 130)" stroke-dasharray="0 ${CIRC}"/>
-              <g id="needle" class="dial-needle"><path d="M130 12 L120 -4 H140 Z" transform="translate(0 14)"/><circle cx="130" cy="30" r="4"/></g>
-            </svg>
-            <div class="dial-center"><b id="chance">0%</b><span id="mult">Pick both sides</span><small id="roll-out"></small></div>
-            <div class="sparks" id="sparks" aria-hidden="true"></div>
+          <div class="upg-wing upg-wing-l" aria-hidden="true"></div>
+          <div class="upg-panel">
+            <div class="upg-slot" id="slot-in"></div>
+            <div class="upg-btns">
+              <button class="skew-btn" type="button" data-act="random">Random</button>
+              <button class="skew-btn" type="button" data-act="all">Select all</button>
+            </div>
+            <div class="upg-valuebox" id="stake-box">Nothing selected</div>
           </div>
-          <div class="upg-slot" id="slot-out"></div>
+
+          <div class="upg-core">
+            <div class="upg-dial oct" id="dial">
+              <div class="oct-frame" aria-hidden="true"></div>
+              <div class="oct-inner" aria-hidden="true"></div>
+              <span class="oct-accent a1" aria-hidden="true"></span><span class="oct-accent a2" aria-hidden="true"></span>
+              <span class="oct-accent a3" aria-hidden="true"></span><span class="oct-accent a4" aria-hidden="true"></span>
+              <span class="oct-dots top" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+              <span class="oct-dots bottom" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+              <svg viewBox="0 0 260 260" aria-hidden="true">
+                <defs>
+                  <linearGradient id="needle-grad" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ff3b5c" stop-opacity="0"/><stop offset="1" stop-color="#ff3b5c"/></linearGradient>
+                </defs>
+                <g class="dial-ticks">${ticks}</g>
+                <circle cx="130" cy="130" r="${R}" class="dial-track"/>
+                <circle cx="130" cy="130" r="${R}" class="dial-arc" id="arc" transform="rotate(-90 130 130)" stroke-dasharray="0 ${CIRC}"/>
+                <circle cx="130" cy="130" r="${R}" class="dial-tail" id="tail" transform="rotate(-90 130 130)" stroke-dasharray="0 ${CIRC}"/>
+                <g id="needle" class="dial-needle"><path d="M127 130 L130 26 L133 130 Z" fill="url(#needle-grad)"/><circle cx="130" cy="30" r="4"/></g>
+              </svg>
+              <div class="dial-center">
+                <b id="chance">0.000 %</b>
+                <span id="chance-label" class="chance-label">Pick both sides</span>
+                <small id="mult"></small>
+                <small id="roll-out"></small>
+              </div>
+              <div class="sparks" id="sparks" aria-hidden="true"></div>
+            </div>
+            <div class="upg-side" role="group" aria-label="Win zone">
+              <button type="button" data-side="under" aria-pressed="${upg.side === 'under'}" class="${upg.side === 'under' ? 'on' : ''}">Roll under</button>
+              <button type="button" data-side="over" aria-pressed="${upg.side === 'over'}" class="${upg.side === 'over' ? 'on' : ''}">Roll over</button>
+            </div>
+            <div class="upg-bar" aria-hidden="true"><i id="chance-bar"></i></div>
+          </div>
+
+          <div class="upg-panel">
+            <div class="upg-slot" id="slot-out"></div>
+            <button class="skew-btn skew-go" type="button" id="upg-go" disabled>Upgrade</button>
+            <div class="upg-mults" role="group" aria-label="Pick a target by multiplier">
+              ${[1.05, 1.5, 2, 5, 10, 20].map(m => `<button type="button" class="skew-chip" data-mult="${m}">${m}x</button>`).join('')}
+            </div>
+          </div>
+          <div class="upg-wing upg-wing-r" aria-hidden="true"></div>
         </div>
-        <div class="upg-controls">
-          <div class="upg-side" role="group" aria-label="Win zone">
-            <button type="button" data-side="under" aria-pressed="${upg.side === 'under'}" class="${upg.side === 'under' ? 'on' : ''}">Roll under</button>
-            <button type="button" data-side="over" aria-pressed="${upg.side === 'over'}" class="${upg.side === 'over' ? 'on' : ''}">Roll over</button>
-          </div>
-          <div class="chips" role="group" aria-label="Pick a target by chance">
-            ${[75, 50, 25, 10, 5].map(c => `<button type="button" class="chip" data-chance="${c}">${c}%</button>`).join('')}
-          </div>
-          <div class="chips" role="group" aria-label="Pick a target by multiplier">
-            ${[1.5, 2, 3, 5, 10].map(m => `<button type="button" class="chip" data-mult="${m}">x${m}</button>`).join('')}
-          </div>
+        <div class="upg-subrow">
           <label class="switch"><input type="checkbox" id="upg-fast" ${SR.store.state.fast ? 'checked' : ''}><span class="switch-ui" aria-hidden="true"></span>Fast</label>
-          <button class="btn btn-go btn-lg" type="button" id="upg-go" disabled>Upgrade</button>
+          <div class="upg-history" id="upg-history" aria-label="Your recent upgrades"></div>
         </div>
-        <div class="upg-history" id="upg-history" aria-label="Your recent upgrades"></div>
         <div class="pickers">
           <div class="picker">
             <div class="picker-head"><h2>Your skins</h2><span class="muted" id="stake-hint"></span></div>
@@ -502,12 +532,16 @@
       const stakeValue = () => upg.stake.reduce((s, uid) => { const e = st.inv.find(x => x.uid === uid); return s + (e ? SR.item(e.id).price : 0); }, 0);
       const chanceOf = () => { const t = upg.target && SR.item(upg.target); return SR.upgradeChance(stakeValue(), t && t.price); };
       const inZone = (frac, ch) => SR.upgradeWins(frac, ch, upg.side);
+      const ghost = text => `${SR.pic(SR.item(GHOST), 'ghost', false)}<p class="slot-empty">${text}</p>`;
 
       // Green zone: [0, chance) for roll under, [1 − chance, 1) for roll over — clockwise from the top.
       const drawZone = ch => {
         $('#arc', root).setAttribute('stroke-dasharray', `${ch * CIRC} ${CIRC}`);
         $('#arc', root).setAttribute('stroke-dashoffset', upg.side === 'over' ? String(-(1 - ch) * CIRC) : '0');
         $$('.tk', root).forEach(el => el.classList.toggle('in', ch > 0 && inZone((+el.dataset.tk + 0.5) / TICKS, ch)));
+        const bar = $('#chance-bar', root);
+        bar.style.width = `${(ch * 100).toFixed(2)}%`;
+        bar.style.marginLeft = upg.side === 'over' ? `${((1 - ch) * 100).toFixed(2)}%` : '0';
       };
 
       const drawHistory = () => {
@@ -523,21 +557,28 @@
         const t = upg.target && SR.item(upg.target);
 
         $('#slot-in', root).innerHTML = upg.stake.length
-          ? `<div class="slot-stack">${upg.stake.map(uid => { const it = SR.item(st.inv.find(x => x.uid === uid).id); return `<span class="slot-stack-item" style="--tc:${SR.tier(it).color}">${SR.pic(it)}</span>`; }).join('')}</div>
-             <div class="slot-label"><span>Your stake</span><b>${money(v)}</b></div>`
-          : `<div class="slot-empty">Pick skins from your inventory below</div>`;
+          ? `<div class="slot-stack">${upg.stake.map(uid => { const it = SR.item(st.inv.find(x => x.uid === uid).id); return `<span class="slot-stack-item" style="--tc:${SR.tier(it).color}">${SR.pic(it)}</span>`; }).join('')}</div>`
+          : ghost('Select a skin you want to upgrade');
+        $('#stake-box', root).innerHTML = upg.stake.length
+          ? `${money(v)}<small>${upg.stake.length} ${upg.stake.length === 1 ? 'skin' : 'skins'}</small>`
+          : 'Nothing selected';
+        $('#stake-box', root).classList.toggle('has', upg.stake.length > 0);
         $('#slot-out', root).innerHTML = t
           ? `<span class="slot-img" style="--tc:${SR.tier(t).color}">${SR.pic(t)}</span>
              <div class="slot-label"><span>${esc(t.weapon)} · ${esc(t.finish)}${t.wear ? ` · ${t.wear}` : ''}</span><b>${money(t.price)}</b></div>`
-          : `<div class="slot-empty">Pick a target skin</div>`;
+          : ghost('Select a skin you want to get');
 
         drawZone(ch);
-        $('#chance', root).textContent = (ch * 100).toFixed(2) + '%';
-        $('#mult', root).textContent = t && v ? `x${(t.price / v).toFixed(2)} · roll ${upg.side}` : 'Pick both sides';
+        const [label, cls] = chanceLabel(ch);
+        $('#chance', root).textContent = (ch * 100).toFixed(3) + ' %';
+        const lab = $('#chance-label', root);
+        lab.textContent = label; lab.className = 'chance-label ' + cls;
+        $('#mult', root).textContent = t && v ? `x${(t.price / v).toFixed(2)} · roll ${upg.side}` : '';
         $('#roll-out', root).textContent = '';
         const go = $('#upg-go', root);
         go.disabled = spinning || !ch;
-        go.textContent = ch ? `Upgrade · ${(ch * 100).toFixed(1)}%` : 'Upgrade';
+        go.textContent = ch ? `Upgrade · x${(t.price / v).toFixed(2)}` : 'Upgrade';
+        $$('[data-mult]', root).forEach(b => b.classList.toggle('on', !!(t && v) && Math.abs(t.price / v - +b.dataset.mult) / +b.dataset.mult < 0.08));
         $('#stake-hint', root).textContent = `${upg.stake.length}/${MAX_STAKE} selected`;
 
         $('#pick-in', root).innerHTML = st.inv.length ? st.inv.map(e => {
@@ -563,8 +604,22 @@
         return SR.ITEM_LIST.filter(it => it.price > v && (upg.wear === 'all' || it.wear === upg.wear))
           .sort((a, b) => Math.abs(a.price - goal) - Math.abs(b.price - goal))[0];
       };
+      const howItWorks = () => SR.modal(`
+        <h2 class="modal-title">How upgrades work</h2>
+        <p class="modal-sub">Stake up to ${MAX_STAKE} of your skins and pick a pricier skin to go for. Your chance is <b>stake ÷ target × 0.95</b>, up to 80%. The green part of the dial is your chance. The needle spins and stops on a provably fair roll: if it stops in the green, the target is yours. If not, your stake is gone.</p>
+        <p class="modal-sub"><b>Roll under</b> puts the green zone at the start of the dial and <b>Roll over</b> at the end. The odds are the same; pick whichever feels luckier. The multiplier buttons pick a target that many times your stake.</p>
+        <div class="win-actions"><button class="btn btn-ghost" type="button" data-close>Got it</button></div>`, { label: 'How upgrades work' });
+
       root.addEventListener('click', e => {
+        if (e.target.closest('[data-act="how"]')) { howItWorks(); return; }
         if (spinning) return;
+        const act = e.target.closest('[data-act]');
+        if (act && (act.dataset.act === 'random' || act.dataset.act === 'all')) {
+          if (!st.inv.length) { SR.toast('You have no skins yet. Open a case or buy one first.'); return; }
+          if (act.dataset.act === 'random') upg.stake = [st.inv[Math.floor(Math.random() * st.inv.length)].uid];
+          else upg.stake = [...st.inv].sort((a, b) => SR.item(b.id).price - SR.item(a.id).price).slice(0, MAX_STAKE).map(x => x.uid);
+          SR.audio.click(); draw(); return;
+        }
         const s = e.target.closest('[data-stake]');
         if (s) {
           const uid = s.dataset.stake;
@@ -581,13 +636,11 @@
           $$('[data-side]', root).forEach(b => { b.classList.toggle('on', b === side); b.setAttribute('aria-pressed', b === side); });
           SR.audio.click(); draw(); return;
         }
-        const m = e.target.closest('[data-mult]'), c = e.target.closest('[data-chance]');
-        if (m || c) {
+        const m = e.target.closest('[data-mult]');
+        if (m) {
           const v = stakeValue();
           if (!v) { SR.toast('Pick skins to stake first'); return; }
-          // chance = stake / target × 0.95  →  target = stake × 0.95 / chance
-          const goal = m ? v * +m.dataset.mult : v * 0.95 / (Math.min(+c.dataset.chance, CAP * 100) / 100);
-          const best = nearestTarget(goal);
+          const best = nearestTarget(v * +m.dataset.mult);
           if (best) { upg.target = best.id; SR.audio.click(); draw(); }
         }
       });
@@ -665,7 +718,9 @@
         dial.classList.add(won ? 'win' : 'lose');
         stage.classList.add(won ? 'won' : 'lost');
         $('#chance', root).textContent = won ? 'Won' : 'Lost';
-        $('#mult', root).textContent = won ? `+${SR.price(it.price - v)}` : `−${SR.price(v)}`;
+        const lab = $('#chance-label', root);
+        lab.textContent = won ? 'Upgraded' : 'Stake lost'; lab.className = 'chance-label ' + (won ? 'safe' : 'risky');
+        $('#mult', root).innerHTML = won ? `+${SR.money(it.price - v)}` : `−${SR.money(v)}`;
         $('#roll-out', root).textContent = `Roll ${roll.value.toFixed(4)} · ${side === 'over' ? `needed ≥ ${(1 - ch).toFixed(4)}` : `needed < ${ch.toFixed(4)}`}`;
         upg.history.unshift({ won, chance: ch, mult: it.price / v, name: SR.fullName(it) });
         upg.history = upg.history.slice(0, 14);
