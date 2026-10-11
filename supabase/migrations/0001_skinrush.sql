@@ -77,6 +77,8 @@ create table if not exists public.inventory (
   created_at timestamptz not null default clock_timestamp()
 );
 create index if not exists inventory_user_idx on public.inventory (user_id, created_at desc);
+alter table public.profiles   add column if not exists luck int not null default 0;
+alter table public.case_items add column if not exists luck double precision[];
 
 create table if not exists public.seeds (
   id          bigint generated always as identity primary key,
@@ -256,6 +258,7 @@ begin
     'tag', p.tag,
     'username', p.username,
     'isAdmin', p.is_admin,
+    'luck', coalesce(p.luck, 0),
     'quiz', jsonb_build_object(
       'nextAt', (extract(epoch from p.quiz_next_at) * 1000)::bigint,
       'tries', p.quiz_tries,
@@ -282,11 +285,24 @@ begin
   return jsonb_build_object('state', _state(u));
 end $$;
 
+-- Weighted pick on the case's table for a luck level (case_items.luck[level + 1]); same walk as _pick.
+create or replace function public._pick_luck(p_case text, r double precision, p_luck int) returns text
+language sql stable security definer set search_path = public as $$
+  with ci as (
+    select item_id, ord, coalesce(luck[p_luck + 1], chance) as ch from case_items where case_id = p_case
+  ), acc as (
+    select item_id, ord, ch, sum(ch) over (order by ord) as acc, sum(ch) over () as tot from ci
+  )
+  select coalesce(
+    (select item_id from acc where ch > 0 and acc > r * tot order by ord limit 1),
+    (select item_id from acc where ch > 0 order by ord desc limit 1))
+$$;
+
 create or replace function public.open_case(p_case text, p_count int) returns jsonb
 language plpgsql security definer set search_path = public, extensions as $$
 declare
   u uuid := _uid(); p public.profiles; c public.cases; total numeric; r record;
-  it text; e jsonb; res jsonb := '[]'::jsonb; won numeric := 0;
+  it text; e jsonb; res jsonb := '[]'::jsonb; won numeric := 0; v_price numeric; v_luck int;
 begin
   p := _profile(u);
   select * into c from cases where id = p_case;
@@ -294,14 +310,19 @@ begin
   total := round(c.price * p_count, 2);
   if p.balance < total then raise exception 'insufficient_funds'; end if;
   update profiles set balance = balance - total where user_id = u;
+  v_luck := least(5, greatest(0, coalesce(p.luck, 0)));
   for i in 1..p_count loop
     select * into r from _roll(u);
-    it := _pick(c.id, r.o_value);
+    it := _pick_luck(c.id, r.o_value, v_luck);
     e := _add_item(u, it, 'case:' || c.id);
-    res := res || jsonb_build_array(e || jsonb_build_object('roll', r.o_value, 'nonce', r.o_nonce));
-    won := won + (select price from items where id = it);
+    res := res || jsonb_build_array(e || jsonb_build_object('roll', r.o_value, 'nonce', r.o_nonce, 'luck', v_luck));
+    select price into v_price from items where id = it;
+    won := won + v_price;
+    -- luck: any profit resets it, a loss climbs one level (max 5 = next open is guaranteed profit)
+    v_luck := case when v_price >= c.price then 0 else least(5, v_luck + 1) end;
     perform _drop(u, it, c.id, 'case');
   end loop;
+  update profiles set luck = v_luck where user_id = u;
   perform _stat_add(u, 'opened', p_count);
   perform _stat_add(u, 'spent', total);
   perform _stat_add(u, 'won', won);
@@ -504,7 +525,7 @@ end $$;
 
 revoke all on function public._uid(), public._new_seed(uuid, text), public._profile(uuid), public._roll(uuid),
   public._pick(text, double precision), public._stat_add(uuid, text, numeric), public._add_item(uuid, text, text),
-  public._take(uuid, uuid[]), public._drop(uuid, text, text, text), public._state(uuid), public._on_new_user()
+  public._take(uuid, uuid[]), public._drop(uuid, text, text, text), public._state(uuid), public._on_new_user(), public._pick_luck(text, double precision, int)
   from public, anon, authenticated;
 
 revoke all on function public.get_state(), public.open_case(text, int), public.sell_items(uuid[]), public.buy_item(text),

@@ -38,9 +38,7 @@
   let lastBal = null;
   function drawHeader() {
     const st = SR.store.state;
-    balEl.textContent = SR.price(st.balance);
-    balEl.title = SR.priceAlt(st.balance);
-    $$('[data-cur]').forEach(b => { const on = b.dataset.cur === st.cur; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+    balEl.innerHTML = SR.money(st.balance);
     drawQuiz();
     if (lastBal !== null && st.balance !== lastBal) {
       balEl.classList.remove('bump-up', 'bump-down');
@@ -63,7 +61,7 @@
   function drawQuiz() {
     const ready = SR.quiz.ready();
     quizEl.classList.toggle('ready', ready);
-    quizEl.querySelector('span').textContent = ready ? `Win ${SR.price(SR.QUIZ_REWARD)}` : SR.clock(SR.quiz.msLeft());
+    quizEl.querySelector('span').innerHTML = ready ? `Win ${SR.money(SR.QUIZ_REWARD)}` : SR.clock(SR.quiz.msLeft());
     quizEl.title = ready ? 'Name a skin to win free money' : 'Time until the next free-money quiz';
     $$('[data-quiz-clock]').forEach(el => { el.textContent = SR.clock(SR.quiz.msLeft()); });
     const changed = quizWasReady !== null && ready !== quizWasReady;
@@ -73,11 +71,10 @@
   setInterval(drawQuiz, 1000);
 
   document.addEventListener('click', e => {
-    const t = e.target.closest('#btn-quiz, #btn-sound, #btn-fair, [data-act="quiz"], [data-act="fair"], [data-cur], .skip');
+    const t = e.target.closest('#btn-quiz, #btn-sound, #btn-fair, [data-act="quiz"], [data-act="fair"], .skip');
     if (!t) return;
     if (t.matches('.skip')) { e.preventDefault(); app.focus(); return; }
-    if (t.dataset.cur) { const st = SR.store.state; if (st.cur !== t.dataset.cur) { st.cur = t.dataset.cur; SR.store.save(); route(); } }
-    else if (t.id === 'btn-quiz' || t.dataset.act === 'quiz') SR.showQuiz();
+    if (t.id === 'btn-quiz' || t.dataset.act === 'quiz') SR.showQuiz();
     else if (t.id === 'btn-sound') { const st = SR.store.state; st.sound = !st.sound; SR.store.save(); if (st.sound) SR.audio.click(); }
     else if (t.id === 'btn-fair' || t.dataset.act === 'fair') SR.showFair();
   });
@@ -217,8 +214,10 @@
   $('#admin-form').addEventListener('submit', async e => {
     e.preventDefault();
     const btn = $('#admin-go'), out = $('#admin-msg');
-    const who = $('#admin-user').value.trim().toLowerCase(), amount = Number($('#admin-amount').value);
-    if (!(amount > 0 && amount <= 1000000)) { out.textContent = 'Enter an amount from 0.01 to 1,000,000.'; return; }
+    // The admin types coins; the server works in USD.
+    const who = $('#admin-user').value.trim().toLowerCase(), coins = Number($('#admin-amount').value);
+    const amount = Math.round(SR.toUsd(coins) * 100) / 100;
+    if (!(amount >= 0.01 && amount <= 1000000)) { out.textContent = `Enter an amount from 1 to ${SR.price(1000000)}.`; return; }
     btn.disabled = true; out.textContent = '';
     try {
       const r = await SR.game.adminDeposit(who, amount);

@@ -22,21 +22,21 @@
   SR.pageOffs = [];
   SR.onPage = (ev, fn) => SR.pageOffs.push(SR.on(ev, fn));
 
-  /* ---------- money: values are USD; the viewer picks $ or so'm ---------- */
-  const usd = n => {
-    const v = Math.round(n * 100) / 100;
-    return '$' + v.toLocaleString('en-US', v >= 100000 ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  /* ---------- money: the server keeps USD; everything on screen is coins (1 coin is worth 1 ruble) ---------- */
+  SR.COIN_RATE = 84.99;   // coins per USD (USD→RUB, 11 Oct 2026)
+  // Gold coin with its own colours, so it reads the same on dark panels, green buttons and orange price tags.
+  SR.COIN_ICON = '<svg class="coin" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7.3" fill="#ffc23a" stroke="#a86d00" stroke-width="1.1"/><circle cx="8" cy="8" r="4.4" fill="none" stroke="#a86d00" stroke-width="1.4"/><path d="M8 5.6v4.8" stroke="#a86d00" stroke-width="1.6" stroke-linecap="round"/></svg>';
+  const group = v => String(v).replace(/\B(?=(\d{3})+(?!\d))/g, '\u202f');
+  const fmtCoins = usd => {
+    const v = usd * SR.COIN_RATE;
+    if (v < 10) return v.toFixed(2).replace(/\.?0+$/, '') || '0';
+    if (v < 100) return v.toFixed(1).replace(/\.0$/, '');
+    return group(Math.round(v));
   };
-  const group = v => String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-  const uzs = n => {
-    const v = Math.round(n * SR.UZS_RATE);
-    if (v >= 1e9) return (v / 1e9).toFixed(2).replace(/\.?0+$/, '') + ' mlrd so\'m';
-    if (v >= 1e6) return (v / 1e6).toFixed(v >= 1e8 ? 0 : 1).replace(/\.0$/, '') + ' mln so\'m';
-    return group(Math.round(v / 10) * 10) + ' so\'m';
-  };
-  SR.price = n => (state.cur === 'uzs' ? uzs(n) : usd(n));
-  SR.money = n => `<span class="money">${SR.price(n)}</span>`;
-  SR.priceAlt = n => (state.cur === 'uzs' ? usd(n) : uzs(n));
+  SR.toCoins = usd => usd * SR.COIN_RATE;
+  SR.toUsd = coins => coins / SR.COIN_RATE;
+  SR.price = n => `${fmtCoins(n)} coins`;                                     // plain text
+  SR.money = n => `<span class="money">${fmtCoins(n)}${SR.COIN_ICON}</span>`;  // with the coin icon
 
   /* ---------- rarity tiers ---------- */
   SR.TIERS = {
@@ -76,6 +76,7 @@
     inv: [],                // [{ uid, id, ts, src }]
     stats: { opened: 0, spent: 0, won: 0, best: null, upgrades: 0, upgradesWon: 0, trades: 0, quizWon: 0, contracts: 0 },
     quiz: { nextAt: Date.now() + QUIZ_MS, tries: QUIZ_TRIES, q: null },
+    luck: 0,                // case luck level 0–5 (js/odds.js)
     cur: 'usd',
     sound: true,
     fast: false,
@@ -153,6 +154,7 @@
       state.tag = s.tag || state.tag;
       state.username = s.username || '';
       state.isAdmin = !!s.isAdmin;
+      state.luck = s.luck || 0;
       SR.emit('state', state);
     },
   };
@@ -272,6 +274,7 @@
     const total = contents.reduce((s, c) => s + c.chance, 0);
     let x = r * total;
     for (const c of contents) { x -= c.chance; if (x < 0) return c.id; }
+    for (let i = contents.length - 1; i >= 0; i--) if (contents[i].chance > 0) return contents[i].id;
     return contents[contents.length - 1].id;
   };
   SR.ranges = contents => {
@@ -280,7 +283,7 @@
     return contents.map(c => { const from = acc / total; acc += c.chance; return { ...c, from, to: acc / total }; });
   };
 
-  /* ---------- skin quiz: every 15 minutes, 3 tries to name a skin for $1,000 ---------- */
+  /* ---------- skin quiz: every 15 minutes, 3 tries to name a skin for a reward ---------- */
   const rand = n => Math.floor(Math.random() * n);
   const quizPool = SR.ITEM_LIST.filter(i => i.main !== false && i.type !== 'Sticker' && !/Blue Gem/.test(i.finish) && i.finish !== 'Vanilla');
   function makeQuestion() {
@@ -413,6 +416,9 @@
 
   /* Crate art: a lid and body drawn in SVG, with the case's best skins rising out between them. */
   SR.crate = (c, { big = false, peek = 2 } = {}) => {
+    // A custom picture from js/case-art.js replaces the drawn crate.
+    const art = SR.CASE_ART && SR.CASE_ART[c.id];
+    if (art) return `<div class="crate crate-art ${big ? 'crate-big' : ''}" style="--glow:${c.glow}" aria-hidden="true"><div class="crate-halo"></div><img class="case-art" src="img/cases/${SR.esc(art)}" alt="" loading="lazy" draggable="false"></div>`;
     const top = c.contents.map(x => SR.item(x.id)).sort((a, b) => b.price - a.price).slice(0, peek);
     const g = c.glow;
     const imgs = top.map((it, i) => SR.pic(it, `crate-item crate-item-${i}`)).join('');

@@ -278,7 +278,7 @@
       });
       const addWon = (d) => {
         const it = SR.item(d.id), box = $(`[data-won="${d.seat}"]`, host);
-        box.insertAdjacentHTML('afterbegin', `<div class="bitem" style="--tc:${SR.tier(it).color}" title="${esc(SR.fullName(it))}">${SR.pic(it, 'bitem-img')}<span>${SR.price(it.price)}</span></div>`);
+        box.insertAdjacentHTML('afterbegin', `<div class="bitem" style="--tc:${SR.tier(it).color}" title="${esc(SR.fullName(it))}">${SR.pic(it, 'bitem-img')}<span>${SR.money(it.price)}</span></div>`);
       };
       const setTotals = upTo => { for (let s = 0; s < b.seats; s++) { const el = $(`[data-total="${s}"]`, host); if (el) el.innerHTML = money(seatTotal(b, s, upTo)); } };
 

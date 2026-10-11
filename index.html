@@ -40,12 +40,8 @@
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Zm-1.2 14.2-3.5-3.5 1.4-1.4 2.1 2.1 4.9-4.9 1.4 1.4-6.3 6.3Z" fill="currentColor"/></svg>
         </button>
         <button class="icon-btn" id="btn-sound" type="button" aria-label="Toggle sound" title="Sound"></button>
-        <div class="cur-toggle" role="group" aria-label="Currency">
-          <button type="button" data-cur="usd" aria-pressed="true">$</button>
-          <button type="button" data-cur="uzs" aria-pressed="false">so'm</button>
-        </div>
         <div class="balance">
-          <span class="balance-amt" id="balance">$0.00</span>
+          <span class="balance-amt" id="balance">0</span>
           <button class="quiz-btn" id="btn-quiz" type="button">
             <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d="M20 7h-2.2A3 3 0 0 0 12 4.4 3 3 0 0 0 6.2 7H4a1 1 0 0 0-1 1v3a1 1 0 0 0 1 1h1v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7h1a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1Zm-6-1a1 1 0 1 1 1 1h-1V6ZM9 5a1 1 0 0 1 1 1v1H9a1 1 0 0 1 0-2Zm2 14H7v-7h4v7Zm0-9H5V9h6v1Zm6 9h-4v-7h4v7Zm2-9h-6V9h6v1Z" fill="currentColor"/></svg>
             <span>15:00</span>
@@ -74,7 +70,7 @@
   <footer class="footer">
     <div class="wrap footer-row">
       <p>SkinRush is a demo. The balance is pretend money: it has no cash value and can't be deposited or withdrawn. Not affiliated with Valve.</p>
-      <p>Skin prices: Skinport market prices for one wear per skin, October 2026. So'm rate: 1 USD = 11,814 so'm (4 Oct 2026). Images: Steam via ByMykel/CSGO-API.</p>
+      <p>Skin prices: Skinport market prices per wear, October 2026, shown in coins (1 coin = 1 ruble; 1 USD = 84.99 coins on 11 Oct 2026). Images: Steam via ByMykel/CSGO-API.</p>
     </div>
   </footer>
 
@@ -84,8 +80,8 @@
     <form class="admin-form" id="admin-form" autocomplete="off">
       <label class="sr-only" for="admin-user">Username</label>
       <input class="input input-sm" id="admin-user" placeholder="username (empty = you)" maxlength="20" autocapitalize="none" spellcheck="false">
-      <label class="sr-only" for="admin-amount">Amount in USD</label>
-      <input class="input input-sm" id="admin-amount" type="number" min="0.01" max="1000000" step="0.01" placeholder="amount $" inputmode="decimal">
+      <label class="sr-only" for="admin-amount">Amount in coins</label>
+      <input class="input input-sm" id="admin-amount" type="number" min="1" max="84990000" step="any" placeholder="coins" inputmode="decimal">
       <button class="btn btn-sell btn-sm" id="admin-go" type="submit">Deposit</button>
       <span class="admin-msg" id="admin-msg" aria-live="polite"></span>
     </form>
@@ -96,6 +92,8 @@
 
   <script src="js/config.js"></script>
   <script src="js/data.js"></script>
+  <script src="js/odds.js"></script>
+  <script src="js/case-art.js"></script>
   <script src="js/core.js"></script>
   <script src="js/game.js"></script>
   <script src="js/game-supabase.js"></script>

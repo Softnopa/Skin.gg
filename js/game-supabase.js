@@ -84,7 +84,7 @@
 
     async openCase(caseId, count) {
       const d = await this.call('open_case', { p_case: caseId, p_count: count });
-      return { results: d.results.map(x => ({ entry: { uid: x.uid, id: x.id, ts: x.ts, src: x.src, sold: x.sold }, roll: { value: x.roll, nonce: x.nonce } })) };
+      return { results: d.results.map(x => ({ entry: { uid: x.uid, id: x.id, ts: x.ts, src: x.src, sold: x.sold }, roll: { value: x.roll, nonce: x.nonce, luck: x.luck } })) };
     },
     async sell(uids) { const d = await this.call('sell_items', { p_uids: uids }); return { count: d.count, total: Number(d.total) }; },
     async buy(itemId) { const d = await this.call('buy_item', { p_item: itemId }); return { entry: d.entry }; },

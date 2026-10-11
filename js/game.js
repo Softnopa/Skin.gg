@@ -63,9 +63,12 @@
       if (!SR.store.spend(total)) throw err('insufficient_funds');
       const results = [];
       for (let i = 0; i < count; i++) {
+        // Roll on the table for the current luck level, then move luck: profit → 0, loss → +1 (js/odds.js).
+        const luck = st().luck || 0;
         const roll = await SR.fair.roll();
-        const id = SR.pickWeighted(c.contents, roll.value);
-        results.push({ entry: SR.store.addItem(id, 'case:' + c.id), roll });
+        const id = SR.pickWeighted(SR.caseTable(c, luck), roll.value);
+        results.push({ entry: SR.store.addItem(id, 'case:' + c.id), roll: { ...roll, luck } });
+        st().luck = SR.nextLuck(luck, SR.item(id).price, c.price);
       }
       const s = st().stats;
       s.opened += count; s.spent += total; s.won += results.reduce((a, r) => a + SR.item(r.entry.id).price, 0);

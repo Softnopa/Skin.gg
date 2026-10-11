@@ -1,6 +1,6 @@
 # SkinRush
 
-A demo CS2 skin site: 47 cases, case battles, upgrades, contracts, trades, a market of 2,114 skins in every wear (6,759 items) and a free-money quiz every 15 minutes. All money is pretend. Prices show in US dollars or Uzbek som.
+A demo CS2 skin site: 47 cases, case battles, upgrades, contracts, trades, a market of 2,114 skins in every wear (6,759 items) and a free-money quiz every 15 minutes. All money is pretend and shown in **coins** (1 coin is worth 1 ruble).
 
 The site runs in one of two modes, chosen automatically:
 
@@ -18,7 +18,8 @@ The site runs in one of two modes, chosen automatically:
    1. `supabase/migrations/0001_skinrush.sql`: tables, security rules and game functions
    2. `supabase/migrations/0002_case_battles.sql`: case battles
    3. `supabase/migrations/0003_upgrades_and_wears.sql`: every wear as its own item, roll-over upgrades
-   4. `supabase/seed.sql`: the 6,759 items and 47 cases (it needs 0003 first)
+   4. `supabase/migrations/0004_luck_odds.sql`: luck-based case odds
+   5. `supabase/seed.sql`: the 6,759 items, 47 cases and their odds tables (it needs 0003 and 0004 first)
 
    Every file is safe to run again. To update an existing database, run any new migration files, then `seed.sql`.
 3. Go to **Authentication → Sign In / Providers**: keep the **Email** provider enabled and turn **off** “Confirm email”. Players sign up with a username and password only. The site turns each username into an internal address (`name@skinrush.local`) that is never emailed.
@@ -50,6 +51,10 @@ With the Vercel CLI instead of GitHub: run `vercel` in this folder, add the two 
 - **Supabase mode:** put your URL and anon key in `.env` (copy `.env.example`; `.env` is never committed), then run `npm run preview`.
 - **Rebuild the Vercel output:** `npm run build` writes `dist/`.
 
+## Case pictures
+
+Put a PNG or WebP (transparent background, about 512×400) in `img/cases/`, then add a line to `js/case-art.js`, for example `souvenir: 'souvenir.png',`. The case id is the end of the case's address (`#/case/souvenir` → `souvenir`). Cases without a line keep the drawn crate.
+
 ## Change prices or cases
 
 `js/data.js` is the catalog for both modes. After editing it, run `npm run seed` to regenerate `supabase/seed.sql`, then run that file again in the SQL Editor. Prices that differ between the site and the database make the market and odds tables disagree with what the server charges.
@@ -57,7 +62,12 @@ With the Vercel CLI instead of GitHub: run `vercel` in this folder, add the two 
 ## How the game rules work
 
 - **Rolls** are provably fair: `HMAC-SHA256(server seed, "client seed:nonce")`, first 13 hex digits ÷ 2^52. The site shows the server seed's SHA-256 hash before play and reveals the seed when you rotate it. The checker in the shield-icon menu re-computes any roll.
-- **Cases:** each case's odds sum to 100%. The average drop is worth about 90% of the case price (Souvenir: about 84%).
+- **Cases (luck odds, `js/odds.js`):** every skin in a case falls in a value band against the case price: under 0.5×, 0.5–1×, 1–2×, 2–5×, 5–20× and 20×+. Bands from 1× up are a profit.
+  - Your **luck level** (0–5) sets the chance an open profits: 34%, 40%, 47%, 55%, 66%, then 100%. A losing open raises luck by one, and a profit resets it. After 5 losses in a row, the 6th open always profits.
+  - Profits split 72% / 21% / 6% / 1% across the 1–2×, 2–5×, 5–20× and 20×+ bands, so small wins are common and jackpots rare. Within a band, cheaper skins are more likely.
+  - The split between "small loss" and "loss" is tuned per case so that, luck included, cases return about 97% over many opens. About 42% of opens profit. A few cases had their price nudged to make that possible.
+  - The case page shows your luck meter and the real chances for your next open. **Check odds** lists them next to the luck-0 chances. Each roll records the luck level it used, and the fairness checker takes it as an input.
+  - Battles always use the luck-0 table.
 - **Upgrade:** stake 1–4 skins. Your win chance is `stake ÷ target × 0.95`, capped at 80%. With **Roll under**, you win when the roll is below the chance (green zone at the start of the dial). With **Roll over**, you win when the roll is at least `1 − chance` (green zone at the end). The odds are the same either way.
 - **Wears:** each skin is listed in every wear the market prices (FN, MW, FT, WW, BS), each at its own Skinport price. The skin's usual wear keeps the plain item id (for example `ak-47-redline`, FT); the other wears are `<id>-<wear>` (`ak-47-redline-bs`).
 - **Contracts:** put in 3–10 skins and get one back. Its target value is `total × 0.25 × 16^(roll^2.07)`, between 0.25× and 4× the total and 0.9× on average. You get the catalog skin priced closest to that value.
@@ -76,7 +86,7 @@ Each rule exists twice: in `js/game.js` for local mode and in `supabase/migratio
 
 - **New accounts:** each new account starts with $2,000, so one person can register several accounts. Turn off sign-ups in Supabase (Authentication → Sign In / Providers → “Allow new users to sign up”) if you only want people you create yourself.
 - **Quiz images:** the quiz picture comes from the public sprite sheets, so a determined player could look up which skin a picture is. Serve quiz images from the server to close this.
-- **Prices:** prices are a Skinport snapshot from October 2026, and the som rate is fixed (1 USD = 11,814 so'm). Blue Gem prices are fixed showcase values.
+- **Prices:** prices are a Skinport snapshot from October 2026. The server stores dollars, and the site shows coins at a fixed rate (`SR.COIN_RATE` in `js/core.js`: 1 USD = 84.99 coins, the ruble rate on 11 Oct 2026). Blue Gem prices are fixed showcase values.
 
 ## Files
 

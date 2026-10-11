@@ -5,7 +5,7 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 const dist = path.join(root, 'dist');
-const SITE = ['index.html', 'css', 'js', 'sprites'];
+const SITE = ['index.html', 'css', 'js', 'sprites', 'img'];
 
 fs.rmSync(dist, { recursive: true, force: true });
 for (const entry of SITE) fs.cpSync(path.join(root, entry), path.join(dist, entry), { recursive: true });

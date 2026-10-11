@@ -4,7 +4,7 @@
   const { $, $$, esc, fmt, money } = SR;
   const wait = ms => new Promise(r => setTimeout(r, ms));
   const byPriceDesc = (a, b) => b.price - a.price;
-  const pct = c => (c >= 1 ? c.toFixed(2) : c >= 0.01 ? c.toFixed(3) : c >= 0.0001 ? c.toFixed(4) : c.toFixed(9).replace(/0+$/, '')) + '%';
+  const pct = c => (!c ? '0' : c >= 1 ? c.toFixed(2) : c >= 0.01 ? c.toFixed(3) : c >= 0.0001 ? c.toFixed(4) : c.toFixed(9).replace(/0+$/, '')) + '%';
 
   const pages = {};
   SR.pages = pages;
@@ -75,7 +75,6 @@
     render({ id }) {
       const c = SR.caseById(id);
       if (!c) return `<section class="wrap section empty"><h1>That case doesn't exist</h1><a class="btn btn-go" href="#/">See all cases</a></section>`;
-      const items = c.contents.map(x => ({ it: SR.item(x.id), chance: x.chance })).sort((a, b) => byPriceDesc(a.it, b.it));
       return `
       <section class="wrap case-page" style="--glow:${c.glow}">
         <div class="case-head">
@@ -85,12 +84,12 @@
         </div>
         <div class="stage" id="stage"><div class="stage-idle">${SR.crate(c, { big: true, peek: 3 })}</div></div>
         <div class="controls" id="controls"></div>
+        <div class="luck" id="luck"></div>
         <div class="section-head section-head-row">
           <h2>What's inside</h2>
           <button class="btn btn-ghost btn-sm" type="button" data-act="odds">Check odds</button>
         </div>
-        <div class="item-grid">${items.map(({ it, chance }) =>
-          SR.itemCard(it, { top: `<span>${pct(chance)}</span><span class="muted">${SR.price(it.price)}</span>` })).join('')}</div>
+        <div class="item-grid" id="case-items"></div>
       </section>`;
     },
 
@@ -100,6 +99,26 @@
       const st = SR.store.state;
       let count = 1, busy = false, alive = true;
       const controls = $('#controls', root), stage = $('#stage', root);
+      // Luck shown on screen only moves once the reel has stopped (the server already knows the new level).
+      let shownLuck = st.luck || 0;
+      const drawLuck = () => {
+        const L = shownLuck, MAX = SR.LUCK.MAX, pc = SR.profitChance(c, L);
+        $('#luck', root).innerHTML = `<div class="luck-meter ${L === MAX ? 'max' : ''}">
+          <span class="luck-title">Luck</span>
+          <span class="luck-pips" role="img" aria-label="Luck level ${L} of ${MAX}">${[...Array(MAX + 1).keys()].map(i => `<i class="${i <= L ? 'on' : ''}"></i>`).join('')}</span>
+          <span class="luck-text">${L === MAX ? '<b>Your next open is guaranteed to profit</b>' : `Chance your next open profits: <b>${pc.toFixed(0)}%</b>`}</span>
+          <span class="luck-hint">Each open that loses money raises your luck. A profit resets it. After 5 losses in a row, the 6th open always profits.</span>
+        </div>`;
+      };
+      const drawItems = () => {
+        const table = SR.caseTable(c, shownLuck);
+        const items = table.map(x => ({ it: SR.item(x.id), chance: x.chance })).sort((a, b) => byPriceDesc(a.it, b.it));
+        $('#case-items', root).innerHTML = items.map(({ it, chance }) => {
+          const mult = it.price / c.price;
+          return SR.itemCard(it, { cls: mult >= 1 ? 'is-profit' : '', top: `<span>${pct(chance)}</span>${mult >= 1 ? `<span class="mult">x${mult >= 10 ? Math.round(mult) : mult.toFixed(1)}</span>` : `<span class="muted">${SR.money(it.price)}</span>`}` });
+        }).join('');
+      };
+      drawLuck(); drawItems();
 
       const renderControls = () => {
         const total = c.price * count;
@@ -114,7 +133,7 @@
           <label class="switch"><input type="checkbox" data-act="fast" ${st.fast ? 'checked' : ''}><span class="switch-ui" aria-hidden="true"></span>Fast open</label>`;
       };
       renderControls();
-      const onState = () => { if (alive && !busy) renderControls(); };
+      const onState = () => { if (alive && !busy) { renderControls(); if (shownLuck !== (SR.store.state.luck || 0)) { shownLuck = SR.store.state.luck || 0; drawLuck(); drawItems(); } } };
       SR.onPage('state', onState);
 
       async function open() {
@@ -131,6 +150,8 @@
         const duration = SR.reducedMotion() ? 1200 : SR.store.state.fast ? 2200 : 8500;
         SR.audio.spinUp();
         await Promise.all(reels.map((rl, i) => rl.spin(duration, { sound: i === 0 })));
+        shownLuck = SR.store.state.luck || 0;
+        if (alive) { drawLuck(); drawItems(); }
 
         results.forEach(r => SR.drops.push(r.entry.id, c, true));
         const best = results.map(r => SR.item(r.entry.id)).sort(byPriceDesc)[0];
@@ -147,7 +168,7 @@
         if (!t) return;
         if (t.dataset.count && !busy) { count = +t.dataset.count; SR.audio.click(); renderControls(); }
         else if (t.dataset.act === 'open') open();
-        else if (t.dataset.act === 'odds') showOdds(c);
+        else if (t.dataset.act === 'odds') showOdds(c, shownLuck);
       });
       root.addEventListener('change', e => {
         if (e.target.matches('[data-act="fast"]')) { st.fast = e.target.checked; SR.store.save(); }
@@ -166,7 +187,7 @@
     const best = [...items].sort(byPriceDesc)[0];
     const bt = SR.tier(best);
     const headline = bt.rank >= 6 ? 'Jackpot!' : bt.rank === 5 ? 'Covert drop' : bt.rank === 4 ? 'Nice pull' : single ? 'You got' : 'Your drops';
-    const deltaHtml = `<span class="delta ${delta >= 0 ? 'up' : 'down'}">${delta >= 0 ? '+' : '−'}${SR.price(Math.abs(delta))} vs ${paidLabel} price</span>`;
+    const deltaHtml = `<span class="delta ${delta >= 0 ? 'up' : 'down'}">${delta >= 0 ? '+' : '−'}${SR.money(Math.abs(delta))} vs ${paidLabel} price</span>`;
     const sellable = entries.filter(e => !e.sold);
 
     const body = single ? `
@@ -216,22 +237,24 @@
     });
   };
 
-  function showOdds(c) {
-    const rows = SR.ranges(c.contents).map(r => {
+  function showOdds(c, luck = 0) {
+    const base = new Map(c.contents.map(x => [x.id, x.chance]));
+    const rows = SR.ranges(SR.caseTable(c, luck)).map(r => {
       const it = SR.item(r.id), t = SR.tier(it);
       return `<tr>
         <td><span class="dot" style="background:${t.color}"></span>${esc(it.weapon)} <b>${esc(it.finish)}</b></td>
-        <td class="num">${SR.price(it.price)}</td>
+        <td class="num">${SR.money(it.price)}</td>
         <td class="num">${pct(r.chance)}</td>
+        <td class="num muted">${pct(base.get(r.id))}</td>
         <td class="num mono">${r.from.toFixed(6)} – ${r.to.toFixed(6)}</td>
       </tr>`;
     }).join('');
-    const ev = c.contents.reduce((s, x) => s + x.chance / 100 * SR.item(x.id).price, 0);
+    const ev = SR.caseTable(c, luck).reduce((s, x) => s + x.chance / 100 * SR.item(x.id).price, 0);
     SR.modal(`
-      <h2 class="modal-title">${esc(c.name)} odds</h2>
-      <p class="modal-sub">Each open rolls a number from 0 to 1. The row whose range contains it is your drop. Average value per open: ${money(ev)} (case price ${money(c.price)}).</p>
+      <h2 class="modal-title">${esc(c.name)} odds at luck ${luck}</h2>
+      <p class="modal-sub">Each open rolls a number from 0 to 1, and the row whose range contains it is your drop. The chances depend on your luck level (0–5): a losing open raises it, a profit resets it. Chance this open profits: <b>${SR.profitChance(c, luck).toFixed(1)}%</b>. Average value at this level: ${money(ev)} (case price ${money(c.price)}). Over many opens, luck included, cases return about ${Math.round((c.rtp || 0.97) * 100)}%.</p>
       <div class="table-wrap"><table class="odds">
-        <thead><tr><th>Item</th><th class="num">Price</th><th class="num">Chance</th><th class="num">Roll range</th></tr></thead>
+        <thead><tr><th>Item</th><th class="num">Price</th><th class="num">Chance now</th><th class="num">At luck 0</th><th class="num">Roll range</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>`, { cls: 'modal-wide', label: 'Case odds' });
   }
@@ -968,6 +991,7 @@
         <label>Client seed<input class="input mono" id="v-client" value="${esc((f.revealed && f.revealed[0] && f.revealed[0].client) || '')}"></label>
         <label>Nonce<input class="input mono" id="v-nonce" type="number" min="1" value="1"></label>
         <label>Case<select class="input select" id="v-case">${SR.CASES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></label>
+        <label>Luck level at that open<select class="input select" id="v-luck">${[0, 1, 2, 3, 4, 5].map(l => `<option value="${l}">${l}</option>`).join('')}</select></label>
       </div>
       <div class="win-actions"><button class="btn btn-ghost" type="button" id="v-go">Check</button></div>
       <p class="verify-out" id="v-out" aria-live="polite"></p>`, { cls: 'modal-wide', label: 'Provably fair' });
@@ -989,8 +1013,9 @@
       if (!server || !client || !nonce) { out.textContent = 'Fill in the server seed, client seed and nonce.'; return; }
       const { value } = await SR.fair.verify(server, client, nonce);
       const c = SR.caseById($('#v-case', m.el).value);
-      const it = SR.item(SR.pickWeighted(c.contents, value));
-      out.innerHTML = `Roll ${value.toFixed(8)} → <b style="color:${SR.tier(it).color}">${esc(SR.fullName(it))}</b> in the ${esc(c.name)} case.<br>
+      const luck = +$('#v-luck', m.el).value;
+      const it = SR.item(SR.pickWeighted(SR.caseTable(c, luck), value));
+      out.innerHTML = `Roll ${value.toFixed(8)} → <b style="color:${SR.tier(it).color}">${esc(SR.fullName(it))}</b> in the ${esc(c.name)} case at luck ${luck}.<br>
         <span class="muted">For an upgrade, you win when the roll is below your chance. For a contract, the result is worth ${SR.contractMultiplier(value).toFixed(3)}× the contract total.</span>`;
     });
   };
