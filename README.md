@@ -1,6 +1,6 @@
 # SkinRush
 
-A demo CS2 skin site: 47 cases, case battles, upgrades, contracts, trades, a market of 2,114 skins in every wear (6,759 items) and a free-money quiz every 15 minutes. All money is pretend and shown in **coins** (1 coin is worth 1 ruble).
+A demo CS2 skin site: 49 cases, case battles, upgrades, contracts, trades, a market of 2,114 skins in every wear (6,759 items) and a free-money quiz every 15 minutes. All money is pretend and shown in **coins** (1 coin is worth 1 ruble).
 
 The site runs in one of two modes, chosen automatically:
 
@@ -19,7 +19,8 @@ The site runs in one of two modes, chosen automatically:
    2. `supabase/migrations/0002_case_battles.sql`: case battles
    3. `supabase/migrations/0003_upgrades_and_wears.sql`: every wear as its own item, roll-over upgrades
    4. `supabase/migrations/0004_luck_odds.sql`: luck-based case odds
-   5. `supabase/seed.sql`: the 6,759 items, 47 cases and their odds tables (it needs 0003 and 0004 first)
+   5. `supabase/migrations/0005_contract_modes_and_sharing.sql`: contract difficulties and Sharing battles
+   6. `supabase/seed.sql`: the 6,759 items, 49 cases and their odds tables (it needs 0003 and 0004 first)
 
    Every file is safe to run again. To update an existing database, run any new migration files, then `seed.sql`.
 3. Go to **Authentication → Sign In / Providers**: keep the **Email** provider enabled and turn **off** “Confirm email”. Players sign up with a username and password only. The site turns each username into an internal address (`name@skinrush.local`) that is never emailed.
@@ -40,7 +41,7 @@ With the Vercel CLI instead of GitHub: run `vercel` in this folder, add the two 
 
 ## Accounts and admin
 
-- The first time someone opens the site (Supabase mode), they see a login screen with **Log in** and **Create account**. Each needs only a username (3–20 lowercase letters, digits or _) and a password (6+ characters). A new account starts with $2,000.
+- The first time someone opens the site (Supabase mode), they see a login screen with **Log in** and **Create account**. Each needs only a username (3–20 lowercase letters, digits or _) and a password (6+ characters). A new account starts with 169,980 coins ($2,000).
 - Usernames listed in the `public.admins` table become admins when they register. The migration lists `aziz`. Register that username yourself right after deploying, before anyone else can take it. The password is whatever you type when you register; it is never stored in this repository.
 - Admins see a bar at the bottom of the page: enter a username (or leave it empty for yourself) and an amount, then press **Deposit**. The server checks the admin flag, caps each deposit at $1,000,000, and records every deposit in `public.admin_log`.
 - To add another admin later, run this in the SQL Editor: `update public.profiles set is_admin = true where username = 'name';`
@@ -57,7 +58,7 @@ Put a PNG or WebP (transparent background, about 512×400) in `img/cases/`, then
 
 ## Change prices or cases
 
-`js/data.js` is the catalog for both modes. After editing it, run `npm run seed` to regenerate `supabase/seed.sql`, then run that file again in the SQL Editor. Prices that differ between the site and the database make the market and odds tables disagree with what the server charges.
+`js/data.js` and `js/custom-cases.js` are the catalog for both modes. After editing them, run `npm run seed` to regenerate `supabase/seed.sql`, then run that file again in the SQL Editor. Prices that differ between the site and the database make the market and odds tables disagree with what the server charges.
 
 ## How the game rules work
 
@@ -70,12 +71,16 @@ Put a PNG or WebP (transparent background, about 512×400) in `img/cases/`, then
   - Battles always use the luck-0 table.
 - **Upgrade:** stake 1–4 skins. Your win chance is `stake ÷ target × 0.95`, capped at 80%. With **Roll under**, you win when the roll is below the chance (green zone at the start of the dial). With **Roll over**, you win when the roll is at least `1 − chance` (green zone at the end). The odds are the same either way.
 - **Wears:** each skin is listed in every wear the market prices (FN, MW, FT, WW, BS), each at its own Skinport price. The skin's usual wear keeps the plain item id (for example `ak-47-redline`, FT); the other wears are `<id>-<wear>` (`ak-47-redline-bs`).
-- **Contracts:** put in 3–10 skins and get one back. Its target value is `total × 0.25 × 16^(roll^2.07)`, between 0.25× and 4× the total and 0.9× on average. You get the catalog skin priced closest to that value.
-- **Quiz:** every 15 minutes you get 3 tries to name a skin, worth $1,000. In Supabase mode the answer stays on the server.
+- **Contracts:** put in 3–10 skins and get one back. Its target value is `total × lo × (hi ÷ lo)^(roll^p)`, and you get the catalog skin priced closest to that value. Every difficulty returns 0.9× the total on average (`SR.CONTRACT_MODES` in `js/game.js`):
+  - **Easy:** 0.6× to 1.2× (p = 0.7881)
+  - **Medium:** 0.25× to 5× (p = 2.5955)
+  - **Hard:** 0.1× to 10× (p = 3.1097)
+- **Quiz:** every 15 minutes you get 3 tries to name a skin, worth 84,990 coins ($1,000). In Supabase mode the answer stays on the server.
 - **Trade:** swap skins with the bot, with the value difference paid from or to your balance.
 - **Case battles:** 1v1, 1v1v1, 1v1v1v1 or 2v2, with up to 25 rounds. Each player pays the sum of the case prices.
   - Every round, each seat opens the same case. The drop for round *r*, seat *s* comes from `HMAC-SHA256(battle seed, "<battle id>:<r>:<s>")`.
   - The team with the highest total takes every drop; in Crazy mode the lowest total wins. Ties are decided by `HMAC(seed, "<battle id>:tie")`.
+  - In Sharing mode nobody wins: the value of all drops is split equally and paid to every player's balance in coins. Bots' shares and the skins go to the house.
   - On a 2-player team, drops are shared out most-expensive first, each to whoever has less so far.
   - The battle starts the moment the last seat fills. The creator can fill empty seats with bots (a bot's winnings go to the house) or cancel for a full refund.
   - The seed hash shows from the start and the seed is revealed at the end. **Verify this battle** re-rolls everything in your browser.
@@ -84,7 +89,7 @@ Each rule exists twice: in `js/game.js` for local mode and in `supabase/migratio
 
 ## Known limits
 
-- **New accounts:** each new account starts with $2,000, so one person can register several accounts. Turn off sign-ups in Supabase (Authentication → Sign In / Providers → “Allow new users to sign up”) if you only want people you create yourself.
+- **New accounts:** each new account starts with 169,980 coins ($2,000), so one person can register several accounts. Turn off sign-ups in Supabase (Authentication → Sign In / Providers → “Allow new users to sign up”) if you only want people you create yourself.
 - **Quiz images:** the quiz picture comes from the public sprite sheets, so a determined player could look up which skin a picture is. Serve quiz images from the server to close this.
 - **Prices:** prices are a Skinport snapshot from October 2026. The server stores dollars, and the site shows coins at a fixed rate (`SR.COIN_RATE` in `js/core.js`: 1 USD = 84.99 coins, the ruble rate on 11 Oct 2026). Blue Gem prices are fixed showcase values.
 
@@ -93,6 +98,9 @@ Each rule exists twice: in `js/game.js` for local mode and in `supabase/migratio
 ```
 index.html, css/, sprites/       the site (sprites = all skin images packed into 22 sheets)
 js/data.js                       skins and cases (generated)
+js/custom-cases.js               hand-picked cases (Factory New Premium, Platinum Knife) and the premium row
+js/odds.js                       luck-based case odds tables
+js/case-art.js                   optional case pictures (img/cases/)
 js/core.js                       money format, state, provably fair, sound, modals
 js/game.js                       game rules, local mode
 js/game-supabase.js              game rules via Supabase RPCs, sign-in, live drops
@@ -100,8 +108,9 @@ js/battles.js                    case battles: rules (shared with the verifier),
 js/reel.js, pages.js, app.js     reel animation, pages, router and header
 supabase/migrations/0001_…sql    database schema, security rules, game functions
 supabase/migrations/0002_…sql    case battles (run after 0001)
+supabase/migrations/0003–0005    wears and upgrades, luck odds, contract difficulties and Sharing battles
 supabase/seed.sql                catalog for the database (generated)
 scripts/build.js                 Vercel build: copies the site to dist/ and writes the config
-scripts/make-seed.js             regenerates supabase/seed.sql from js/data.js
+scripts/make-seed.js             regenerates supabase/seed.sql from js/data.js, custom-cases.js and odds.js
 vercel.json, package.json        Vercel settings
 ```

@@ -9,7 +9,9 @@ const root = path.join(__dirname, '..');
 const sandbox = { window: {} };
 sandbox.SR = sandbox.window.SR = {};
 vm.runInNewContext(fs.readFileSync(path.join(root, 'js', 'data.js'), 'utf8'), sandbox);
-// Luck tables and the final case prices come from js/odds.js, exactly as the browser computes them.
+// Hand-picked cases, then luck tables and final case prices, exactly as the browser computes them.
+sandbox.console = console;
+vm.runInNewContext(fs.readFileSync(path.join(root, 'js', 'custom-cases.js'), 'utf8'), sandbox);
 vm.runInNewContext(fs.readFileSync(path.join(root, 'js', 'odds.js'), 'utf8'), sandbox);
 const { ITEMS, CASES } = sandbox.SR;
 

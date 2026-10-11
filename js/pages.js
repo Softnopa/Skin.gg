@@ -16,25 +16,38 @@
   SR.quizBtn = quizBtn;
 
   const GROUPS = [
+    ['premium', 'Premium cases', 'Souvenir and the wear cases, from Battle-Scarred to Factory New Premium.'],
     ['color', 'Colour cases', 'Every skin inside matches the case colour. Elite versions add knives and gloves.'],
-    ['knife', 'Knives, gloves & rare patterns', 'Blue Gems, Doppler phases, Karambits and Katowice 2014 stickers.'],
+    ['knife', 'Knives, gloves & rare patterns', 'Platinum Knife, Blue Gems, Doppler phases, Karambits and Katowice 2014 stickers.'],
     ['weapon', 'Weapon cases', 'One weapon family per case, from cheap finishes to the famous ones.'],
     ['wear', 'Wear cases', 'Every skin inside comes in the same wear.'],
-    ['budget', 'Budget & rarity cases', 'Cheap spins, plenty of small wins, the odd big one.'],
+    ['budget', 'Quick cases', 'Cheap spins, plenty of small wins, the odd big one.'],
   ];
+  // Sections the viewer collapsed (per browser).
+  const HIDDEN_KEY = 'skinrush.hidden';
+  const hiddenGroups = () => { try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]')); } catch (e) { return new Set(); } };
+  const saveHidden = set => { try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...set])); } catch (e) { /* session only */ } };
 
   /* ================= HOME ================= */
   pages.home = {
     title: 'Cases',
     render() {
       const f = SR.caseById('souvenir');
-      const lore = f.contents.find(x => x.id === 'awp-dragon-lore');
+      const lore = SR.caseTable(f, SR.store.state.luck || 0).find(x => x.id === 'awp-dragon-lore');
+      const hidden = hiddenGroups();
       const sections = GROUPS.map(([g, title, sub]) => {
         const list = SR.CASES.filter(c => c.group === g);
-        if (g !== 'color') list.sort((a, b) => a.price - b.price);
-        return `<section class="wrap section" id="g-${g}">
-          <div class="section-head"><h2>${title}</h2><p>${sub}</p></div>
-          <div class="case-grid">${list.map(SR.caseCard).join('')}</div>
+        if (!list.length) return '';
+        if (g === 'premium') list.sort((a, b) => SR.CASE_ORDER.indexOf(a.id) - SR.CASE_ORDER.indexOf(b.id));
+        else if (g !== 'color') list.sort((a, b) => a.price - b.price);
+        const isHidden = hidden.has(g);
+        return `<section class="wrap section case-section ${isHidden ? 'is-hidden' : ''}" id="g-${g}">
+          <div class="section-head section-head-row">
+            <h2>${title}</h2>
+            <button class="hide-btn" type="button" data-hide="${g}" aria-expanded="${!isHidden}" aria-controls="grid-${g}">${isHidden ? 'Show' : 'Hide'}<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path d="M7 14l5-5 5 5z" fill="currentColor"/></svg></button>
+          </div>
+          <p class="section-sub">${sub}</p>
+          <div class="case-grid ${g === 'premium' ? 'case-grid-premium' : ''}" id="grid-${g}" ${isHidden ? 'hidden' : ''}>${list.map(SR.caseCard).join('')}</div>
         </section>`;
       }).join('');
       return `
@@ -43,7 +56,7 @@
           <div class="hero-copy">
             <p class="hero-kicker">Featured case</p>
             <h1 class="hero-title">Souvenir</h1>
-            <p class="hero-sub">${f.contents.length} drops, from Katowice 2014 stickers to an AWP Dragon Lore at ${pct(lore ? lore.chance : 0.308)}. Every roll is provably fair.</p>
+            <p class="hero-sub">${f.contents.length} drops, from Katowice 2014 stickers to an AWP Dragon Lore at ${pct(lore ? lore.chance : 0.3)}. Every roll is provably fair.</p>
             <div class="hero-cta">
               <a class="btn btn-go btn-lg" href="#/case/souvenir">Open for ${money(f.price)}</a>
               <a class="btn btn-ghost btn-lg" href="#/case/blue-gem">Try the Blue Gem case</a>
@@ -54,12 +67,24 @@
         </div>
       </section>
       <nav class="wrap jump" aria-label="Case groups">
-        ${GROUPS.map(([g, title]) => `<a class="chip" href="#g-${g}" data-jump="g-${g}">${title.split(' ')[0] === 'Knives,' ? 'Knives & patterns' : title.replace(' cases', '')}</a>`).join('')}
+        ${GROUPS.filter(([g]) => SR.CASES.some(c => c.group === g)).map(([g, title]) => `<a class="chip" href="#g-${g}" data-jump="g-${g}">${title.split(' ')[0] === 'Knives,' ? 'Knives & patterns' : title.replace(' cases', '')}</a>`).join('')}
       </nav>
       ${sections}`;
     },
     mount(root) {
       root.addEventListener('click', e => {
+        const h = e.target.closest('[data-hide]');
+        if (h) {
+          const g = h.dataset.hide, set = hiddenGroups(), grid = $(`#grid-${g}`, root), sec = $(`#g-${g}`, root);
+          const hide = !set.has(g);
+          if (hide) set.add(g); else set.delete(g);
+          saveHidden(set);
+          grid.hidden = hide;
+          sec.classList.toggle('is-hidden', hide);
+          h.setAttribute('aria-expanded', String(!hide));
+          h.firstChild.textContent = hide ? 'Show' : 'Hide';
+          return;
+        }
         const j = e.target.closest('[data-jump]');
         if (!j) return;
         e.preventDefault();
@@ -851,28 +876,41 @@
   };
 
   /* ================= CONTRACTS ================= */
-  const con = { picked: [] };
+  const con = { picked: [], mode: 'medium' };
+  const RACK_GHOSTS = ['ak-47-redline', 'awp-asiimov', 'm4a1-s-cyrex', 'desert-eagle-printstream', 'usp-s-kill-confirmed',
+    'm4a4-desolate-space', 'p90-asiimov', 'glock-18-water-elemental', 'ssg-08-dragonfire', 'mp7-bloodsport'];
+  const TAB_GUNS = { easy: 'glock-18-water-elemental', medium: 'ak-47-redline', hard: 'awp-asiimov' };
+
   pages.contracts = {
     title: 'Contracts',
     render() {
       const R = SR.RULES;
       return `
-      <section class="wrap section">
-        <div class="page-head"><h1>Contracts</h1><p>Put ${R.CONTRACT_MIN} to ${R.CONTRACT_MAX} skins into a contract and get one skin back, worth ${R.CONTRACT_LO}× to ${R.CONTRACT_HI}× their total. Lower results are more likely, and the average return is 0.9× the total.</p></div>
-        <div class="contract-board">
-          <div class="contract-slots" id="con-slots"></div>
-          <div class="contract-side" id="con-side"></div>
+      <section class="wrap section con2" id="con2" style="--mc:${SR.CONTRACT_MODES[con.mode].color}">
+        <div class="page-head"><h1>Contracts</h1><p>Put ${R.CONTRACT_MIN} to ${R.CONTRACT_MAX} skins into a contract and get one skin back. Pick how risky: every difficulty returns 0.9× the total on average, but harder ones reach higher and land low more often.</p></div>
+        <div class="con-tabs" role="tablist" aria-label="Difficulty">
+          ${Object.entries(SR.CONTRACT_MODES).map(([k, m], i) => {
+            const gun = SR.item(TAB_GUNS[k]);
+            return `<button type="button" role="tab" class="con-tab ${con.mode === k ? 'on' : ''}" data-cmode="${k}" aria-selected="${con.mode === k}" style="--tc:${m.color}">
+              <span class="con-chev" aria-hidden="true">${'<i></i>'.repeat(i + 1)}</span>
+              <span class="con-tab-label">${m.label}</span>
+              <span class="con-badge">x${m.hi}</span>
+              ${gun ? SR.pic(gun, 'con-tab-gun', false) : ''}
+            </button>`;
+          }).join('')}
+        </div>
+        <div class="con-rack" id="con-rack"></div>
+        <div class="con-panel">
+          <div class="con-panel-top">
+            <span class="con-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 7h12l-3-3 1.4-1.4L20 8l-5.6 5.4L13 12l3-3H4zm16 10H8l3 3-1.4 1.4L4 16l5.6-5.4L11 12l-3 3h12z" fill="currentColor"/></svg></span>
+            <p id="con-info"></p>
+            <button class="skew-btn con-go" type="button" data-act="sign" disabled>Create contract</button>
+          </div>
+          <div class="con-progress"><i id="con-bar"></i></div>
+          <div class="con-scale" aria-hidden="true">${[...Array(R.CONTRACT_MAX + 1).keys()].map(n => `<span class="${n === R.CONTRACT_MIN ? 'min' : ''}">${n === R.CONTRACT_MIN ? `${n} min` : n}</span>`).join('')}</div>
         </div>
         <div class="stage contract-stage" id="con-stage" hidden></div>
-        <div class="picker">
-          <div class="picker-head"><h2>Your inventory</h2>
-            <span class="picker-tools">
-              <button class="btn btn-ghost btn-sm" type="button" data-act="fill">Fill with cheapest</button>
-              <button class="btn btn-ghost btn-sm" type="button" data-act="clear">Clear</button>
-            </span>
-          </div>
-          <div class="item-grid item-grid-sm" id="con-inv"></div>
-        </div>
+        <div class="con-inv" id="con-inv-wrap"></div>
       </section>`;
     },
     mount(root) {
@@ -880,39 +918,61 @@
       const st = SR.store.state;
       let alive = true, busy = false;
       const totalOf = () => con.picked.reduce((s, uid) => { const e = st.inv.find(x => x.uid === uid); return s + (e ? SR.item(e.id).price : 0); }, 0);
+      const ghosts = RACK_GHOSTS.map(id => SR.item(id)).filter(Boolean);
 
       const draw = () => {
         con.picked = con.picked.filter(uid => st.inv.some(e => e.uid === uid));
-        const n = con.picked.length, total = totalOf();
-        const slots = [];
-        for (let i = 0; i < R.CONTRACT_MAX; i++) {
-          const uid = con.picked[i];
-          const e = uid && st.inv.find(x => x.uid === uid);
-          slots.push(e
-            ? SR.itemCard(SR.item(e.id), { cls: 'pickable', attrs: `role="button" tabindex="0" title="Remove" data-unpick="${uid}"`, foot: `<span class="price">${money(SR.item(e.id).price)}</span>` })
-            : `<div class="slot-blank ${i < R.CONTRACT_MIN ? 'need' : ''}" aria-hidden="true">${i + 1}</div>`);
-        }
-        $('#con-slots', root).innerHTML = slots.join('');
-        const ready = n >= R.CONTRACT_MIN && !busy;
-        $('#con-side', root).innerHTML = `
-          <dl class="contract-sum">
-            <div><dt>Skins</dt><dd>${n} of ${R.CONTRACT_MAX}</dd></div>
-            <div><dt>Contract total</dt><dd>${money(total)}</dd></div>
-            <div><dt>You can get</dt><dd>${n ? `${money(total * R.CONTRACT_LO)} – ${money(total * R.CONTRACT_HI)}` : '—'}</dd></div>
-          </dl>
-          <button class="btn btn-go btn-lg" type="button" data-act="sign" ${ready ? '' : 'disabled'}>${busy ? 'Signing…' : n < R.CONTRACT_MIN ? `Add ${R.CONTRACT_MIN - n} more ${R.CONTRACT_MIN - n === 1 ? 'skin' : 'skins'}` : 'Sign contract'}</button>`;
+        const n = con.picked.length, total = totalOf(), m = SR.CONTRACT_MODES[con.mode];
+        $('#con2', root).style.setProperty('--mc', m.color);
+
+        // the rack: 10 slots, skins hang vertically; empty slots show a faint weapon
+        $('#con-rack', root).innerHTML = `<span class="con-rack-word" aria-hidden="true">Contract</span>` + [...Array(R.CONTRACT_MAX).keys()].map(i => {
+          const uid = con.picked[i], e = uid && st.inv.find(x => x.uid === uid);
+          if (e) {
+            const it = SR.item(e.id);
+            return `<button type="button" class="con-slot filled" data-unpick="${uid}" style="--tc:${SR.tier(it).color}" title="Remove ${esc(SR.fullName(it))}">${SR.pic(it, 'con-gun')}<span class="con-slot-price">${money(it.price)}</span></button>`;
+          }
+          const g = ghosts[i % ghosts.length];
+          return `<span class="con-slot ${i < R.CONTRACT_MIN ? 'need' : ''}" aria-hidden="true">${g ? SR.pic(g, 'con-gun ghost', false) : ''}</span>`;
+        }).join('') + '<span class="con-shelf" aria-hidden="true"></span>';
+
+        $('#con-info', root).innerHTML = n
+          ? `${n} ${n === 1 ? 'skin' : 'skins'} worth ${money(total)}. You get one skin worth <b>${money(total * m.lo)}</b> to <b>${money(total * m.hi)}</b> (${m.lo}×–${m.hi}×).`
+          : `Add at least <b>${R.CONTRACT_MIN} skins</b> (up to ${R.CONTRACT_MAX}) to get a chance at a rarer one. ${m.label}: the result is worth <b>${m.lo}×</b> to <b>${m.hi}×</b> what you put in.`;
+        const go = $('[data-act="sign"]', root);
+        go.disabled = busy || n < R.CONTRACT_MIN;
+        go.textContent = busy ? 'Signing…' : n < R.CONTRACT_MIN ? `Add ${R.CONTRACT_MIN - n} more` : 'Create contract';
+        $('#con-bar', root).style.width = `${(n / R.CONTRACT_MAX) * 100}%`;
 
         const free = st.inv.filter(e => !con.picked.includes(e.uid));
-        $('#con-inv', root).innerHTML = st.inv.length
-          ? (free.map(e => SR.itemCard(SR.item(e.id), { cls: 'pickable', attrs: `role="button" tabindex="0" data-pick-con="${e.uid}"`, foot: `<span class="price">${money(SR.item(e.id).price)}</span>` })).join('')
-            || '<div class="empty-inline">Every skin you own is already in the contract.</div>')
-          : `<div class="empty-inline">You need at least ${R.CONTRACT_MIN} skins. <a href="#/">Open a case</a> or <a href="#/market">buy some cheap ones</a>.</div>`;
+        $('#con-inv-wrap', root).innerHTML = st.inv.length
+          ? `<div class="picker">
+              <div class="picker-head"><h2>Your skins</h2>
+                <span class="picker-tools">
+                  <button class="btn btn-ghost btn-sm" type="button" data-act="fill">Fill with cheapest</button>
+                  <button class="btn btn-ghost btn-sm" type="button" data-act="clear">Clear</button>
+                </span>
+              </div>
+              <div class="item-grid item-grid-sm">${free.map(e => SR.itemCard(SR.item(e.id), { cls: 'pickable', attrs: `role="button" tabindex="0" data-pick-con="${e.uid}"`, foot: `<span class="price">${money(SR.item(e.id).price)}</span>` })).join('')
+                || '<div class="empty-inline">Every skin you own is in the contract.</div>'}</div>
+            </div>`
+          : `<div class="con-none">
+              <span class="con-none-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="30" height="30"><path d="M3 7l9-4 9 4v10l-9 4-9-4V7zm9 2.2L5 6.3v9.4l7 3.1 7-3.1V6.3l-7 2.9z" fill="currentColor"/></svg></span>
+              <div><b>No skins yet</b><span>Open cases and win skins to use in a contract.</span></div>
+              <a class="btn btn-ghost btn-sm" href="#/">Go to cases</a>
+            </div>`;
       };
       draw();
       SR.onPage('state', () => alive && !busy && draw());
 
       root.addEventListener('click', e => {
         if (busy) return;
+        const mt = e.target.closest('[data-cmode]');
+        if (mt) {
+          con.mode = mt.dataset.cmode;
+          $$('[data-cmode]', root).forEach(b => { b.classList.toggle('on', b === mt); b.setAttribute('aria-selected', b === mt); });
+          SR.audio.click(); draw(); return;
+        }
         const p = e.target.closest('[data-pick-con]'), u = e.target.closest('[data-unpick]'), a = e.target.closest('[data-act]');
         if (p) {
           if (con.picked.length >= R.CONTRACT_MAX) { SR.toast(`A contract holds up to ${R.CONTRACT_MAX} skins`); return; }
@@ -931,16 +991,16 @@
       async function sign() {
         if (busy || con.picked.length < R.CONTRACT_MIN) return;
         busy = true;
-        const uids = [...con.picked], total = totalOf();
+        const uids = [...con.picked], total = totalOf(), mode = con.mode, m = SR.CONTRACT_MODES[mode];
         draw();
         let res;
-        try { res = await SR.game.contract(uids); }
+        try { res = await SR.game.contract(uids, mode); }
         catch (e) { busy = false; draw(); SR.toast(SR.errorText(e), 'bad'); return; }
         con.picked = [];
 
-        // Reel through skins in the contract's range; it lands on the result.
-        const lo = total * R.CONTRACT_LO, hi = total * R.CONTRACT_HI;
-        let pool = SR.ITEM_LIST.filter(it => it.price >= lo && it.price <= hi);
+        // Reel through skins in this difficulty's range; it lands on the result.
+        const lo = total * m.lo, hi = total * m.hi;
+        let pool = SR.ITEM_LIST.filter(it => it.main && it.price >= lo && it.price <= hi);
         if (pool.length < 8) pool = SR.ITEM_LIST.slice().sort((a, b) => Math.abs(a.price - total) - Math.abs(b.price - total)).slice(0, 40);
         const step = Math.max(1, Math.floor(pool.length / 40));
         const sample = pool.filter((_, i) => i % step === 0).slice(0, 40);
@@ -1072,7 +1132,7 @@
       const luck = +$('#v-luck', m.el).value;
       const it = SR.item(SR.pickWeighted(SR.caseTable(c, luck), value));
       out.innerHTML = `Roll ${value.toFixed(8)} → <b style="color:${SR.tier(it).color}">${esc(SR.fullName(it))}</b> in the ${esc(c.name)} case at luck ${luck}.<br>
-        <span class="muted">For an upgrade, you win when the roll is below your chance. For a contract, the result is worth ${SR.contractMultiplier(value).toFixed(3)}× the contract total.</span>`;
+        <span class="muted">For an upgrade, you win when the roll is below your chance. For a contract, the result is worth ${SR.contractMultiplier(value, 'easy').toFixed(3)}× (easy), ${SR.contractMultiplier(value, 'medium').toFixed(3)}× (medium) or ${SR.contractMultiplier(value, 'hard').toFixed(3)}× (hard) the contract total.</span>`;
     });
   };
 })();

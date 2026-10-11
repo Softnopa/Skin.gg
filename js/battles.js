@@ -33,14 +33,20 @@
         drops.push({ round: r, seat: s, id, price: SR.item(id).price, wonBy: null });
       }
     }
-    const totals = new Map();
-    for (const d of drops) totals.set(teamOf(b.mode, d.seat), (totals.get(teamOf(b.mode, d.seat)) || 0) + cents(d.price));
-    const teams = [...totals.keys()].sort((x, y) => x - y);
-    const vals = teams.map(t => totals.get(t));
-    const best = b.crazy ? Math.min(...vals) : Math.max(...vals);
-    const tied = teams.filter(t => totals.get(t) === best);
-    const winnerTeam = tied[Math.floor((await SR.fair.rollMsg(seed, `${b.id}:tie`)) * tied.length)];
-    const winners = [...Array(b.seats).keys()].filter(s => teamOf(b.mode, s) === winnerTeam);
+    let winnerTeam = null, winners;
+    if (b.share) {
+      // Sharing mode: no winner and no skins handed out; the pot is split equally in coins (see SR.shareEach).
+      return { drops, winnerTeam: null };
+    } else {
+      const totals = new Map();
+      for (const d of drops) totals.set(teamOf(b.mode, d.seat), (totals.get(teamOf(b.mode, d.seat)) || 0) + cents(d.price));
+      const teams = [...totals.keys()].sort((x, y) => x - y);
+      const vals = teams.map(t => totals.get(t));
+      const best = b.crazy ? Math.min(...vals) : Math.max(...vals);
+      const tied = teams.filter(t => totals.get(t) === best);
+      winnerTeam = tied[Math.floor((await SR.fair.rollMsg(seed, `${b.id}:tie`)) * tied.length)];
+      winners = [...Array(b.seats).keys()].filter(s => teamOf(b.mode, s) === winnerTeam);
+    }
     const haul = winners.map(() => 0);
     [...drops].sort((x, y) => cents(y.price) - cents(x.price) || x.round - y.round || x.seat - y.seat).forEach(d => {
       let k = 0;
@@ -51,6 +57,9 @@
     return { drops, winnerTeam };
   };
 
+  // Sharing mode payout per seat (coins credited to every player; bots' shares go to the house).
+  SR.shareEach = b => Math.round(b.drops.reduce((s, d) => s + d.price, 0) / b.seats * 100) / 100;
+
   /* ---------- helpers for pages ---------- */
   const casesCost = ids => Math.round(ids.reduce((s, id) => s + SR.caseById(id).price, 0) * 100) / 100;
   const seatTotal = (b, seat, upToRound = Infinity) => b.drops.filter(d => d.seat === seat && d.round <= upToRound).reduce((s, d) => s + d.price, 0);
@@ -58,7 +67,7 @@
   const myId = () => (SR.game.myId ? SR.game.myId() : 'me');
   const mySeat = b => { const p = b.players.find(x => x.userId === myId()); return p ? p.seat : -1; };
   const initial = name => esc((name || '?').replace(/^Bot /, '').slice(0, 1).toUpperCase());
-  const modeLabel = b => `${MODES[b.mode].label}${b.crazy ? ' · Crazy' : ''}`;
+  const modeLabel = b => `${MODES[b.mode].label}${b.share ? ' · Sharing' : b.crazy ? ' · Crazy' : ''}`;
   const caseStrip = (ids, max = 6) => {
     const counts = [];
     ids.forEach(id => { const last = counts[counts.length - 1]; if (last && last.id === id) last.n++; else counts.push({ id, n: 1 }); });
@@ -70,61 +79,132 @@
   };
 
   /* ================= LOBBY ================= */
+  const ICONS = {
+    normal: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M3 3l7.5 7.5-1.4 1.4L2 4.8V3h1zm18 0v1.8l-7.1 7.1-1.4-1.4L20 3h1zM6.2 14.4l3.4 3.4-2.1 2.1 1.4 1.4-1.4 1.4-2.8-2.8-2.1 2.1L1.2 20.6l2.1-2.1L.5 15.7l1.4-1.4 1.4 1.4 2.9-1.3zm11.6 0l2.9 1.3 1.4-1.4 1.4 1.4-2.8 2.8 2.1 2.1-1.4 1.4-2.1-2.1-2.8 2.8-1.4-1.4 1.4-1.4-2.1-2.1 3.4-3.4zM12 9.2L16.3 5h2.8L13.4 10.6 12 9.2z" fill="currentColor"/></svg>',
+    crazy: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-4 6.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm8 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM6.5 14h11a5.5 5.5 0 0 1-11 0z" fill="currentColor"/></svg>',
+    share: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 2l3 3h-2v4.1a5 5 0 0 1 3.6 2.6L20 10l-.7 4.2-3.6-2.2 1-.6a3 3 0 0 0-5.4 0l1 .6-3.6 2.2L8 10l3.4 1.7A5 5 0 0 1 11 9.1V5H9l3-3zM5 15h4v7H5v-7zm10 0h4v7h-4v-7z" fill="currentColor"/></svg>',
+  };
+  const kindOf = b => (b.share ? 'share' : b.crazy ? 'crazy' : 'normal');
+  const isWinnerSeat = (b, s) => b.status === 'done' && (b.share || teamOf(b.mode, s) === b.winnerTeam);
+  // Where a battle is right now: waiting for players, playing round N (everyone watches the same round), or ended.
+  const progress = b => {
+    if (b.status === 'open') return { state: 'waiting' };
+    if (b.status !== 'done') return { state: 'ended' };
+    const r = Math.floor((Date.now() - (b.startedAt || 0)) / ROUND_MS) + 1;
+    return r <= b.cases.length ? { state: 'live', round: r } : { state: 'ended' };
+  };
+  const lobby = { kind: 'all', players: 'all', sort: 'high' };
+
   SR.pages.battles = {
     title: 'Case battles',
     render() {
+      const pl = [['1v1', '2'], ['1v1v1', '3'], ['1v1v1v1', '4'], ['2v2', '2x2']];
       return `
-      <section class="wrap section">
+      <section class="wrap section blobby">
         <div class="page-head page-head-row">
-          <div><h1>Case battles</h1><p>Open the same cases as other players, round by round. The highest total takes every skin. In Crazy mode, the lowest total wins.</p></div>
+          <div><h1>Case battles</h1><p>Everyone opens the same cases, round by round. Normal: the highest total takes every skin. Crazy: the lowest total wins. Sharing: everyone splits the pot equally.</p></div>
           <a class="btn btn-go btn-lg" href="#/battles/new">Create battle</a>
         </div>
-        <h2 class="blist-title">Waiting for players</h2>
-        <div class="blist" id="b-open"><p class="muted">Loading battles…</p></div>
-        <h2 class="blist-title">Recent battles</h2>
-        <div class="blist" id="b-done"></div>
+        <div class="bl-filters">
+          <span class="bl-flabel">Mode</span>
+          <div class="bl-group" role="group" aria-label="Mode">
+            ${['normal', 'crazy', 'share'].map(k => `<button type="button" class="bl-icon ${lobby.kind === k ? 'on' : ''}" data-kind="${k}" aria-pressed="${lobby.kind === k}" title="${{ normal: 'Normal', crazy: 'Crazy mode', share: 'Sharing mode' }[k]}">${ICONS[k]}</button>`).join('')}
+          </div>
+          <span class="bl-flabel">Players</span>
+          <div class="bl-group" role="group" aria-label="Players">
+            ${pl.map(([m, l]) => `<button type="button" class="bl-num ${lobby.players === m ? 'on' : ''}" data-players="${m}" aria-pressed="${lobby.players === m}">${l}</button>`).join('')}
+          </div>
+          <select class="bl-sort" id="bl-sort" aria-label="Sort">
+            <option value="high" ${lobby.sort === 'high' ? 'selected' : ''}>Highest price</option>
+            <option value="low" ${lobby.sort === 'low' ? 'selected' : ''}>Lowest price</option>
+            <option value="new" ${lobby.sort === 'new' ? 'selected' : ''}>Newest</option>
+          </select>
+          <button type="button" class="bl-reset" data-reset><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z" fill="currentColor"/></svg>Reset</button>
+        </div>
+        <div class="bl-table">
+          <div class="bl-th" aria-hidden="true"><span>Rounds</span><span>Battle scenario</span><span></span><span>Cost</span><span>Players</span><span></span></div>
+          <div id="bl-rows"><p class="muted bl-empty">Loading battles…</p></div>
+        </div>
       </section>`;
     },
     mount(root) {
-      let alive = true;
+      let alive = true, list = [], timer = null;
       const row = b => {
-        const filled = b.players.length, me = mySeat(b) >= 0;
+        const pr = progress(b), me = mySeat(b) >= 0, filled = b.players.length;
+        const roundsLabel = pr.state === 'live' ? 'Round' : b.cases.length === 1 ? 'Round' : 'Rounds';
+        const scenario = b.cases.map((cid, i) => {
+          const c = SR.caseById(cid), r = i + 1;
+          const cls = pr.state === 'live' ? (r < pr.round ? 'past' : r === pr.round ? 'now' : '') : pr.state === 'ended' ? 'past' : '';
+          return `<div class="bl-case ${cls}" style="--glow:${c.glow}">${SR.crate(c)}<span>${esc(c.name)}</span></div>`;
+        }).join('');
         const seats = [...Array(b.seats).keys()].map(s => {
           const p = b.players.find(x => x.seat === s);
-          const won = b.status === 'done' && teamOf(b.mode, s) === b.winnerTeam;
-          return p ? `<span class="bavatar ${p.bot ? 'bot' : ''} ${won ? 'won' : ''}" title="${esc(p.name)}">${initial(p.name)}</span>` : '<span class="bavatar open" aria-hidden="true"></span>';
+          return p ? `<span class="bavatar ${p.bot ? 'bot' : ''} ${isWinnerSeat(b, s) && pr.state === 'ended' ? 'won' : ''}" title="${esc(p.name)}">${initial(p.name)}</span>` : '<span class="bavatar open" aria-hidden="true"></span>';
         });
         if (b.mode === '2v2') seats.splice(2, 0, '<span class="bvs">vs</span>');
-        const action = b.status === 'open'
-          ? (me ? `<a class="btn btn-ghost btn-sm" href="#/battle/${b.id}">Open</a>` : `<a class="btn btn-go btn-sm" href="#/battle/${b.id}">Join ${money(b.cost)}</a>`)
-          : `<a class="btn btn-ghost btn-sm" href="#/battle/${b.id}">Watch</a>`;
-        const winners = b.status === 'done' ? b.players.filter(p => teamOf(b.mode, p.seat) === b.winnerTeam).map(p => esc(p.name)).join(' & ') : '';
-        return `<div class="brow">
-          <span class="bmode">${modeLabel(b)}<small>${b.cases.length} ${b.cases.length === 1 ? 'round' : 'rounds'}</small></span>
-          ${caseStrip(b.cases)}
-          <span class="bseats">${seats.join('')}</span>
-          <span class="bprice">${b.status === 'done' ? `<small>${winners} won</small>${money(potValue(b))}` : `<small>${filled}/${b.seats} players</small>${money(b.cost)}`}</span>
-          ${action}
+        const kind = kindOf(b);
+        const tag = kind === 'share' ? 'Sharing mode' : kind === 'crazy' ? 'Crazy mode' : b.mode === '2v2' ? '2 vs 2' : '';
+        const action = b.status === 'open' && !me
+          ? `<a class="skew-btn bl-join" href="#/battle/${b.id}">Join ${money(b.cost)}</a>`
+          : `<a class="skew-btn bl-watch" href="#/battle/${b.id}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 5C6.5 5 2.7 9.4 1.5 12c1.2 2.6 5 7 10.5 7s9.3-4.4 10.5-7C21.3 9.4 17.5 5 12 5zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm0-2a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" fill="currentColor"/></svg>${me && b.status === 'open' ? 'Open' : 'Watch'}</a>`;
+        return `<div class="bl-row is-${pr.state} kind-${kind}">
+          <div class="bl-rounds">
+            <span class="bl-status ${pr.state}">${pr.state === 'live' ? 'Live' : pr.state === 'waiting' ? 'Waiting' : 'Ended'}</span>
+            <span class="bl-hex"><b>${pr.state === 'live' ? pr.round : b.cases.length}</b></span>
+            <small>${roundsLabel}</small>
+          </div>
+          <div class="bl-scenario">${scenario}</div>
+          <a class="bl-details" href="#/battle/${b.id}" title="Battle details">Details</a>
+          <div class="bl-cost">${money(b.cost)}</div>
+          <div class="bl-players">
+            <span class="bl-count">${filled} / ${b.seats}</span>
+            <span class="bseats">${seats.join('')}</span>
+            ${tag ? `<span class="bl-tag ${kind}">${tag}</span>` : ''}
+          </div>
+          <div class="bl-act">${action}</div>
         </div>`;
       };
-      const draw = async () => {
-        let list;
-        try { list = await SR.game.listBattles(); } catch (e) { if (alive) $('#b-open', root).innerHTML = `<p class="bad-text">${esc(SR.errorText(e))}</p>`; return; }
-        if (!alive) return;
-        const open = list.filter(b => b.status === 'open'), done = list.filter(b => b.status === 'done').slice(0, 12);
-        $('#b-open', root).innerHTML = open.length ? open.map(row).join('')
-          : `<div class="empty-inline">No battles are waiting. <a href="#/battles/new">Create one</a> and others can join, or fill the seats with bots.</div>`;
-        $('#b-done', root).innerHTML = done.length ? done.map(row).join('') : '<div class="empty-inline">Finished battles show up here.</div>';
+      const paint = () => {
+        const order = { live: 0, waiting: 1, ended: 2 };
+        let rows = list.filter(b => b.status !== 'cancelled')
+          .filter(b => lobby.kind === 'all' || kindOf(b) === lobby.kind)
+          .filter(b => lobby.players === 'all' || b.mode === lobby.players);
+        const ended = rows.filter(b => progress(b).state === 'ended').slice(0, 12);
+        rows = rows.filter(b => progress(b).state !== 'ended').concat(ended);
+        rows.sort((a, b) => order[progress(a).state] - order[progress(b).state]
+          || (lobby.sort === 'high' ? b.cost - a.cost : lobby.sort === 'low' ? a.cost - b.cost : b.createdAt - a.createdAt));
+        $('#bl-rows', root).innerHTML = rows.length ? rows.map(row).join('')
+          : `<div class="empty-inline bl-empty">No battles match. <a href="#/battles/new">Create one</a>, then invite others or fill the seats with bots.</div>`;
+        // Live rows move round by round; repaint every second while any battle is live.
+        clearTimeout(timer);
+        if (alive) timer = setTimeout(paint, rows.some(b => progress(b).state === 'live') ? 1000 : 15000);
       };
-      draw();
-      const off = SR.game.subscribeBattles(() => alive && draw());
-      const timer = setInterval(() => alive && !document.hidden && draw(), 15000);
-      return () => { alive = false; off(); clearInterval(timer); };
+      const load = async () => {
+        try { list = await SR.game.listBattles(); }
+        catch (e) { if (alive) $('#bl-rows', root).innerHTML = `<p class="bad-text bl-empty">${esc(SR.errorText(e))}</p>`; return; }
+        if (alive) paint();
+      };
+      load();
+      root.addEventListener('click', e => {
+        const k = e.target.closest('[data-kind]'), pl = e.target.closest('[data-players]');
+        if (k) lobby.kind = lobby.kind === k.dataset.kind ? 'all' : k.dataset.kind;
+        else if (pl) lobby.players = lobby.players === pl.dataset.players ? 'all' : pl.dataset.players;
+        else if (e.target.closest('[data-reset]')) { lobby.kind = 'all'; lobby.players = 'all'; lobby.sort = 'high'; $('#bl-sort', root).value = 'high'; }
+        else return;
+        $$('[data-kind]', root).forEach(b => { const on = b.dataset.kind === lobby.kind; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+        $$('[data-players]', root).forEach(b => { const on = b.dataset.players === lobby.players; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+        SR.audio.click();
+        paint();
+      });
+      $('#bl-sort', root).addEventListener('change', e => { lobby.sort = e.target.value; paint(); });
+      const off = SR.game.subscribeBattles(() => alive && load());
+      const refresh = setInterval(() => alive && !document.hidden && load(), 15000);
+      return () => { alive = false; off(); clearInterval(refresh); clearTimeout(timer); };
     },
   };
 
   /* ================= BUILDER ================= */
-  const builder = { mode: '1v1', crazy: false, picks: [], q: '' };
+  const builder = { mode: '1v1', kind: 'normal', picks: [], q: '' };
   SR.pages.battleNew = {
     title: 'Create battle',
     render() {
@@ -137,7 +217,10 @@
               <span class="bopt-label">Players</span>
               <div class="chips" role="group" aria-label="Players">${Object.entries(MODES).map(([k, m]) => `<button type="button" class="chip ${builder.mode === k ? 'on' : ''}" data-mode="${k}" aria-pressed="${builder.mode === k}">${m.label}</button>`).join('')}</div>
             </div>
-            <label class="switch bopt"><input type="checkbox" id="b-crazy" ${builder.crazy ? 'checked' : ''}><span class="switch-ui" aria-hidden="true"></span>Crazy mode: the lowest total wins</label>
+            <div class="bopt">
+              <span class="bopt-label">Mode</span>
+              <div class="chips" role="group" aria-label="Battle mode">${[['normal', 'Normal: highest total wins'], ['crazy', 'Crazy: lowest total wins'], ['share', 'Sharing: everyone splits the pot']].map(([k, l]) => `<button type="button" class="chip ${builder.kind === k ? 'on' : ''}" data-kind="${k}" aria-pressed="${builder.kind === k}">${l}</button>`).join('')}</div>
+            </div>
             <div class="picker-head"><h2>Add cases</h2><input class="input input-sm" type="search" id="b-q" placeholder="Search cases" value="${esc(builder.q)}" aria-label="Search cases"></div>
             <div class="bcase-grid" id="b-grid"></div>
           </div>
@@ -170,7 +253,7 @@
           <dl class="contract-sum">
             <div><dt>Players</dt><dd>${MODES[builder.mode].label}</dd></div>
             <div><dt>Rounds</dt><dd>${builder.picks.length} of ${SR.BATTLE.MAX_ROUNDS}</dd></div>
-            <div><dt>Winner</dt><dd>${builder.crazy ? 'Lowest total' : 'Highest total'}</dd></div>
+            <div><dt>Winner</dt><dd>${builder.kind === 'crazy' ? 'Lowest total' : builder.kind === 'share' ? 'Everyone shares' : 'Highest total'}</dd></div>
             <div><dt>Cost per player</dt><dd>${money(cost)}</dd></div>
           </dl>
           ${builder.picks.length ? caseStrip(builder.picks, 8) : '<p class="muted">Add at least one case.</p>'}
@@ -181,7 +264,12 @@
       drawGrid(); drawSide();
       SR.onPage('state', () => alive && drawSide());
       root.addEventListener('click', async e => {
-        const m = e.target.closest('[data-mode]'), add = e.target.closest('[data-add]'), sub = e.target.closest('[data-sub]');
+        const m = e.target.closest('[data-mode]'), add = e.target.closest('[data-add]'), sub = e.target.closest('[data-sub]'), kd = e.target.closest('[data-kind]');
+        if (kd) {
+          builder.kind = kd.dataset.kind;
+          $$('[data-kind]', root).forEach(b => { b.classList.toggle('on', b === kd); b.setAttribute('aria-pressed', b === kd); });
+          drawSide(); return;
+        }
         if (m) {
           builder.mode = m.dataset.mode;
           $$('[data-mode]', root).forEach(b => { b.classList.toggle('on', b === m); b.setAttribute('aria-pressed', b === m); });
@@ -201,7 +289,7 @@
             // Group identical cases so rounds read like the case strip.
             const order = SR.CASES.map(c => c.id);
             const picks = [...builder.picks].sort((a, b) => order.indexOf(a) - order.indexOf(b));
-            const { battle } = await SR.game.createBattle(picks, builder.mode, builder.crazy);
+            const { battle } = await SR.game.createBattle(picks, builder.mode, builder.kind === 'crazy', builder.kind === 'share');
             builder.picks = [];
             location.hash = `#/battle/${battle.id}`;
           } catch (err) { SR.toast(SR.errorText(err), 'bad'); }
@@ -211,7 +299,6 @@
         SR.audio.click();
         drawGrid(); drawSide();
       });
-      $('#b-crazy', root).addEventListener('change', e => { builder.crazy = e.target.checked; drawSide(); });
       $('#b-q', root).addEventListener('input', e => { builder.q = e.target.value; drawGrid(); });
       return () => { alive = false; };
     },
@@ -287,11 +374,13 @@
         setTotals(Infinity);
         $$('.bcol', host).forEach(col => {
           const s = +col.dataset.seat;
-          const won = teamOf(b.mode, s) === b.winnerTeam;
+          const won = isWinnerSeat(b, s);
           col.classList.toggle('winner', won); col.classList.toggle('loser', !won);
-          if (won) $('.bplayer', col).insertAdjacentHTML('afterbegin', '<span class="bwin-tag">Winner</span>');
+          if (won) $('.bplayer', col).insertAdjacentHTML('afterbegin', `<span class="bwin-tag">${b.share ? 'Shared' : 'Winner'}</span>`);
         });
-        $('#b-status', host).textContent = `Finished. ${b.players.filter(p => teamOf(b.mode, p.seat) === b.winnerTeam).map(p => p.name).join(' & ')} won ${SR.price(potValue(b))}.`;
+        $('#b-status', host).textContent = b.share
+          ? `Finished. The pot of ${SR.price(potValue(b))} was split: everyone got ${SR.price(SR.shareEach(b))}.`
+          : `Finished. ${b.players.filter(p => teamOf(b.mode, p.seat) === b.winnerTeam).map(p => p.name).join(' & ')} won ${SR.price(potValue(b))}.`;
       };
 
       // Play rounds from `fromRound`; earlier rounds appear instantly (you arrived late).
@@ -323,8 +412,9 @@
         finish();
         const me = mySeat(b);
         if (me >= 0 && fromRound <= b.cases.length) {
+          if (b.share) { SR.audio.coins(); SR.toast(`Your share: ${SR.money(SR.shareEach(b))} added to your balance`, 'good'); return; }
           const mine = b.drops.filter(d => d.wonBy === me);
-          if (mine.length) { SR.audio.coins(); SR.toast(`You won the battle: ${mine.length} skins worth ${SR.price(mine.reduce((s, d) => s + d.price, 0))} added to your inventory`, 'good'); }
+          if (mine.length) { SR.audio.coins(); SR.toast(`${b.share ? 'Your share' : 'You won the battle'}: ${mine.length} skins worth ${SR.price(mine.reduce((s, d) => s + d.price, 0))} added to your inventory`, 'good'); }
           else { SR.audio.lose(); SR.toast(`You lost this battle. ${b.players.filter(p => teamOf(b.mode, p.seat) === b.winnerTeam).map(p => p.name).join(' & ')} took the pot.`, 'bad'); }
         }
       }

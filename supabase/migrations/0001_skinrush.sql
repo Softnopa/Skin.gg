@@ -396,24 +396,34 @@ begin
   return jsonb_build_object('received', cardinality(p_get), 'diff', diff, 'state', _state(u));
 end $$;
 
--- Contract: 3–10 skins in, one out. Target value = total × 0.25 × 16^(roll^2.07) (0.25×–4×, average ≈ 0.90×);
--- the result is the catalog item nearest that value (ties: lowest id in byte order).
-create or replace function public.sign_contract(p_uids uuid[]) returns jsonb
+-- Contract: 3–10 skins in, one out. Target value = total × lo × (hi/lo)^(roll^p), then the catalog item nearest that
+-- value (ties: lowest id in byte order). Each difficulty averages 0.9× the total (mirrors SR.CONTRACT_MODES in js/game.js):
+--   easy 0.6×–1.2× (p 0.7881)   medium 0.25×–5× (p 2.5955)   hard 0.1×–10× (p 3.1097)
+drop function if exists public.sign_contract(uuid[]);
+create or replace function public.sign_contract(p_uids uuid[], p_mode text default 'medium') returns jsonb
 language plpgsql security definer set search_path = public, extensions as $$
 declare u uuid := _uid(); total numeric; r record; m double precision; it text; e jsonb;
+        lo double precision; hi double precision; pw double precision;
 begin
   perform _profile(u);
   if p_uids is null or cardinality(p_uids) < 3 or cardinality(p_uids) > 10 then raise exception 'bad_request'; end if;
+  case coalesce(p_mode, 'medium')
+    when 'easy'   then lo := 0.6;  hi := 1.2; pw := 0.7881;
+    when 'medium' then lo := 0.25; hi := 5;   pw := 2.5955;
+    when 'hard'   then lo := 0.1;  hi := 10;  pw := 3.1097;
+    else raise exception 'bad_request';
+  end case;
   total := _take(u, p_uids);
   select * into r from _roll(u);
-  m := 0.25 * power(16::double precision, power(r.o_value, 2.07));
+  m := lo * power(hi / lo, power(r.o_value, pw));
   select id into it from items
   order by abs(price::double precision - total::double precision * m), id collate "C"
   limit 1;
   e := _add_item(u, it, 'contract');
   perform _drop(u, it, null, 'contract');
   perform _stat_add(u, 'contracts', 1);
-  return jsonb_build_object('entry', e, 'roll', r.o_value, 'nonce', r.o_nonce, 'multiplier', m, 'total', total, 'state', _state(u));
+  return jsonb_build_object('entry', e, 'roll', r.o_value, 'nonce', r.o_nonce, 'multiplier', m, 'total', total,
+                            'mode', coalesce(p_mode, 'medium'), 'state', _state(u));
 end $$;
 
 -- Quiz: every 15 minutes, 3 tries, +$1,000 for naming the skin. The answer never leaves the server until answered.
@@ -529,11 +539,11 @@ revoke all on function public._uid(), public._new_seed(uuid, text), public._prof
   from public, anon, authenticated;
 
 revoke all on function public.get_state(), public.open_case(text, int), public.sell_items(uuid[]), public.buy_item(text),
-  public.upgrade_item(uuid[], text, text), public.trade_items(uuid[], text[]), public.sign_contract(uuid[]),
+  public.upgrade_item(uuid[], text, text), public.trade_items(uuid[], text[]), public.sign_contract(uuid[], text),
   public.quiz_question(), public.quiz_answer(text), public.rotate_seed(text), public.set_client_seed(text), public.admin_deposit(text, numeric)
   from public, anon;
 grant execute on function public.get_state(), public.open_case(text, int), public.sell_items(uuid[]), public.buy_item(text),
-  public.upgrade_item(uuid[], text, text), public.trade_items(uuid[], text[]), public.sign_contract(uuid[]),
+  public.upgrade_item(uuid[], text, text), public.trade_items(uuid[], text[]), public.sign_contract(uuid[], text),
   public.quiz_question(), public.quiz_answer(text), public.rotate_seed(text), public.set_client_seed(text), public.admin_deposit(text, numeric)
   to authenticated;
 

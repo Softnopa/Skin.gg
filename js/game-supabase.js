@@ -52,7 +52,12 @@
     },
     async listBattles() { const d = await this.call('list_battles'); return (d || []).map(b => this.normBattle(b)); },
     async getBattle(id) { return this.normBattle(await this.call('get_battle', { p_id: id })); },
-    async createBattle(cases, mode, crazy) { const d = await this.call('create_battle', { p_cases: cases, p_mode: mode, p_crazy: !!crazy }); return { battle: this.normBattle(d.battle) }; },
+    async createBattle(cases, mode, crazy, share) {
+      const args = { p_cases: cases, p_mode: mode, p_crazy: !!crazy && !share };
+      if (share) args.p_share = true;     // only sent when used, so older databases still accept normal battles
+      const d = await this.call('create_battle', args);
+      return { battle: this.normBattle(d.battle) };
+    },
     async joinBattle(id) { const d = await this.call('join_battle', { p_id: id }); return { battle: this.normBattle(d.battle) }; },
     async callBots(id) { const d = await this.call('call_bots', { p_id: id }); return { battle: this.normBattle(d.battle) }; },
     async cancelBattle(id) { const d = await this.call('cancel_battle', { p_id: id }); return { battle: this.normBattle(d.battle) }; },
@@ -94,8 +99,8 @@
       return { won: d.won, roll: { value: d.roll, nonce: d.nonce }, chance: d.chance, side: d.side || side, entry: d.entry };
     },
     async trade(giveUids, getIds) { const d = await this.call('trade_items', { p_give: giveUids, p_get: getIds }); return { received: d.received, diff: Number(d.diff) }; },
-    async contract(uids) {
-      const d = await this.call('sign_contract', { p_uids: uids });
+    async contract(uids, mode = 'medium') {
+      const d = await this.call('sign_contract', mode === 'medium' ? { p_uids: uids } : { p_uids: uids, p_mode: mode });
       return { entry: d.entry, roll: { value: d.roll, nonce: d.nonce }, multiplier: d.multiplier, total: Number(d.total) };
     },
     async quizQuestion() { const d = await this.call('quiz_question'); return d.q; },

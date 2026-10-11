@@ -24,14 +24,20 @@
   SR.RULES = {
     UPGRADE_MAX_STAKE: 4, UPGRADE_HOUSE: 0.95, UPGRADE_CAP: 0.8,
     TRADE_MAX_GET: 10,
-    CONTRACT_MIN: 3, CONTRACT_MAX: 10, CONTRACT_LO: 0.25, CONTRACT_HI: 4, CONTRACT_P: 2.07,
+    CONTRACT_MIN: 3, CONTRACT_MAX: 10,
   };
   const R = SR.RULES;
   // Roll under: win when roll < chance (green zone at the start of the dial). Roll over: win when roll ≥ 1 − chance.
   SR.upgradeWins = (roll, chance, side) => (side === 'over' ? roll >= 1 - chance : roll < chance);
   SR.upgradeChance = (stake, target) => (!stake || !target || target <= stake ? 0 : Math.min(R.UPGRADE_CAP, stake / target * R.UPGRADE_HOUSE));
-  // Contract result value = total × 0.25 × 16^(roll^2.07): log-scaled from 0.25× to 4×, average ≈ 0.90×.
-  SR.contractMultiplier = r => R.CONTRACT_LO * Math.pow(R.CONTRACT_HI / R.CONTRACT_LO, Math.pow(r, R.CONTRACT_P));
+  // Contract result value = total × lo × (hi/lo)^(roll^p). Every difficulty averages 0.9× the total;
+  // harder modes reach higher but land low more often. Mirrors sign_contract in supabase/migrations.
+  SR.CONTRACT_MODES = {
+    easy:   { label: 'Easy',   lo: 0.6,  hi: 1.2, p: 0.7881, color: '#36c26e' },
+    medium: { label: 'Medium', lo: 0.25, hi: 5,   p: 2.5955, color: '#ff8a1f' },
+    hard:   { label: 'Hard',   lo: 0.1,  hi: 10,  p: 3.1097, color: '#ff3b5c' },
+  };
+  SR.contractMultiplier = (r, mode = 'medium') => { const m = SR.CONTRACT_MODES[mode]; return m.lo * Math.pow(m.hi / m.lo, Math.pow(r, m.p)); };
   // The catalog item closest in price to the target value (ties: lowest id, byte order — same as Postgres COLLATE "C").
   SR.nearestItem = value => {
     let best = null, bd = Infinity;
@@ -112,11 +118,12 @@
       return { received: getIds.length, diff };
     },
 
-    async contract(uids) {
+    async contract(uids, mode = 'medium') {
+      if (!SR.CONTRACT_MODES[mode]) throw err('bad_request');
       if (uids.length < R.CONTRACT_MIN || uids.length > R.CONTRACT_MAX) throw err('bad_request');
       const total = value(owned(uids));
       const roll = await SR.fair.roll();
-      const multiplier = SR.contractMultiplier(roll.value);
+      const multiplier = SR.contractMultiplier(roll.value, mode);
       const it = SR.nearestItem(total * multiplier);
       SR.store.take(uids);
       const entry = SR.store.addItem(it.id, 'contract');
@@ -146,14 +153,14 @@
     subscribeBattles: () => () => {},
     async listBattles() { return [...local.battles.values()].sort((a, b) => b.createdAt - a.createdAt); },
     async getBattle(id) { return local.battles.get(id) || null; },
-    async createBattle(cases, mode, crazy) {
+    async createBattle(cases, mode, crazy, share) {
       const m = SR.BATTLE.MODES[mode];
       if (!m || !cases.length || cases.length > SR.BATTLE.MAX_ROUNDS || cases.some(id => !SR.caseById(id))) throw err('bad_request');
       const cost = Math.round(cases.reduce((s, id) => s + SR.caseById(id).price, 0) * 100) / 100;
       if (!SR.store.spend(cost)) throw err('insufficient_funds');
       const id = 'local-' + SR.uid(), seed = SR.fair.randHex(32);
       const b = {
-        id, creator: 'me', creatorName: 'You', mode, crazy: !!crazy, cases: [...cases], seats: m.seats, cost,
+        id, creator: 'me', creatorName: 'You', mode, crazy: !!crazy && !share, share: !!share, cases: [...cases], seats: m.seats, cost,
         status: 'open', serverHash: await SR.fair.sha256(seed), seed: null, winnerTeam: null,
         createdAt: Date.now(), startedAt: null, players: [{ seat: 0, userId: 'me', name: 'You', bot: false }], drops: [],
       };
@@ -168,6 +175,7 @@
       b.players.sort((x, y) => x.seat - y.seat);
       const seed = local.seeds.get(id);
       const { drops, winnerTeam } = await SR.battleOutcome(b, seed);
+      if (b.share) SR.store.credit(Math.round(drops.reduce((s, d) => s + d.price, 0) / b.seats * 100) / 100);
       drops.filter(d => d.wonBy === 0).forEach(d => SR.store.addItem(d.id, 'battle'));
       st().stats.battles = (st().stats.battles || 0) + 1;
       if (SR.battleTeamOf(b.mode, 0) === winnerTeam) st().stats.battlesWon = (st().stats.battlesWon || 0) + 1;
