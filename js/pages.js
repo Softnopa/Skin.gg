@@ -681,8 +681,9 @@
         // Needle lands exactly on the roll (fraction of a full turn, clockwise from the top).
         const fast = st.fast || SR.reducedMotion();
         const from = needleDeg % 360;
-        const to = 360 * (fast ? 3 : 6) + roll.value * 360;
-        const dur = SR.reducedMotion() ? 600 : fast ? 1800 : 5600;
+        // ~1.3× the travel and time of the original spin (whole turns, so the needle still lands on the roll).
+        const to = 360 * (fast ? 4 : 8) + roll.value * 360;
+        const dur = SR.reducedMotion() ? 600 : fast ? 2340 : 7300;
         const ease = t => 1 - Math.pow(1 - t, 5);
         const needle = $('#needle', root), tail = $('#tail', root);
         let lastTick = 0, lastSeg = -1, lastZone = null;
